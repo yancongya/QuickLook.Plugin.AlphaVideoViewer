@@ -5,12 +5,12 @@ using System.IO;
 
 namespace QuickLook.Plugin.AlphaVideoViewer.Probing
 {
-    /// <summary>拼接布局：None = 不是 Alpha 拼接视频</summary>
+    /// <summary>拼接布局：None = 不像 Alpha 拼接视频</summary>
     public enum AlphaLayout
     {
         None,
-        SideBySide,   // 左右拼接（宽高比 ≈ 2:1）
-        TopBottom,    // 上下拼接（宽高比 ≈ 1:2）
+        SideBySide,   // 左右拼接（宽 > 高）
+        TopBottom,    // 上下拼接（高 > 宽）
     }
 
     public class ProbeResult
@@ -18,18 +18,37 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
         public int Width;
         public int Height;
         public AlphaLayout Layout = AlphaLayout.None;
+
+        /// <summary>
+        /// 窄边占比（0..1）：短边 / 长边。
+        /// =1 表示两个半区都是正方形（严格 2:1 素材），&lt;1 表示另一边是窄条或内容不满（VAP 常见）。
+        /// 仅作参考；页面端会用逐帧像素自检重新判定实际拼接布局，不依赖此值。
+        /// </summary>
+        public double AlphaScale = 1.0;
+
         public DateTime CheckedAt;
     }
 
     /// <summary>
     /// 轻量 ISO BMFF（MP4/MOV/M4V）容器探测：只读 ftyp 与 tkhd box，不解码任何帧，毫秒级完成。
-    /// 判定规则：视频轨道宽高比 ≈2:1 → SideBySide；≈1:2 → TopBottom；其余一律 None（不接管）。
-    /// 容差 ±2%（普通视频 16:9=1.78、4:1 极少见，误抢概率极低）。
+    ///
+    /// 判定放宽为「可被对半切分」而不是「严格 2:1」——真实产业素材（腾讯 VAP、字节 AlphaPlayer、
+    /// YYEVA）的 alpha 半区普遍做了降采样，整帧几乎不会正好 2:1。规则：
+    ///   · 长边沿其法线方向切半，切出的内容矩形宽高比落在 [MIN_SPLIT, MAX_SPLIT] → 接管
+    ///   · 方向由长短边决定：宽 &gt; 高 → SideBySide；高 &gt; 宽 → TopBottom
+    ///   · 16:9(1.78) 切半后内容 0.89:1（等价 1.125，超出上限）→ 不接管；
+    ///     9:16 竖屏同理，从 2.5 起才可能命中，但 9:16=0.5625 落在下限之外 → 不接管
+    /// 误判风险由前端像素自检（一半近灰度）+ 「普通视频模式」开关兜住。
     /// 结果按路径缓存 60 秒（QuickLook 对同一文件先 CanHandle 后 View，必须命中缓存；期间文件被改动则立即失效）。
     /// </summary>
     public static class Mp4Probe
     {
-        private const double AspectTolerance = 0.02;
+        // 切半后内容矩形的长/短边比允许区间；1.0 = 正方形内容（严格 2:1 素材）
+        private const double MinContentAspect = 1.0;
+        private const double MaxContentAspect = 2.5;
+        // 极接近正方形时两个切法都行，按默认约定取左右
+        private const double SquareEpsilon = 0.02;
+
         private const long MaxMoovSize = 64L * 1024 * 1024;
         private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
         private static readonly ConcurrentDictionary<string, ProbeResult> Cache =
@@ -98,19 +117,34 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
 
                 if (bestW <= 0 || bestH <= 0) return None();
 
-                // 左右拼接：整帧宽 = 2×高；上下拼接：整帧高 = 2×宽
-                if (Near(bestW, 2.0 * bestH))
-                    return new ProbeResult { Width = bestW, Height = bestH, Layout = AlphaLayout.SideBySide, CheckedAt = DateTime.Now };
-                if (Near(bestH, 2.0 * bestW))
-                    return new ProbeResult { Width = bestW, Height = bestH, Layout = AlphaLayout.TopBottom, CheckedAt = DateTime.Now };
+                double longSide = Math.Max(bestW, bestH);
+                double shortSide = Math.Min(bestW, bestH);
 
-                return None();
+                // 长边切半后得到内容矩形 (longSide/2) × shortSide；
+                // 其长/短边比 = max(long/2, short) / min(long/2, short)
+                double half = longSide / 2.0;
+                double hi = Math.Max(half, shortSide);
+                double lo = Math.Min(half, shortSide);
+                if (lo < 1.0) return None();
+
+                double contentAspect = hi / lo;
+                if (contentAspect < MinContentAspect || contentAspect > MaxContentAspect) return None();
+
+                // 近乎正方形时两个切法都可行，按默认约定取左右
+                AlphaLayout layout;
+                if (bestH >= bestW * (1.0 + SquareEpsilon)) layout = AlphaLayout.TopBottom;
+                else layout = AlphaLayout.SideBySide;
+
+                return new ProbeResult
+                {
+                    Width = bestW,
+                    Height = bestH,
+                    Layout = layout,
+                    // 短边 / 长边：alpha 窄区相对正方形内容区的占比
+                    AlphaScale = shortSide / longSide,
+                    CheckedAt = DateTime.Now
+                };
             }
-        }
-
-        private static bool Near(double actual, double expected)
-        {
-            return Math.Abs(actual - expected) <= Math.Max(2.0, expected * AspectTolerance);
         }
 
         /// <summary>顶层 box 顺序扫描；mdat 等按 size 跳过，复杂度 O(box 数)，与文件体积无关。</summary>

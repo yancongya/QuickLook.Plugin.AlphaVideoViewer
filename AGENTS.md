@@ -13,17 +13,19 @@ powershell -ExecutionPolicy Bypass -File Scripts/pack-zip.ps1
 ## Project Overview
 
 QuickLook plugin for previewing alpha/RGB split transparent videos (MP4/MOV).
-Uses WebView2 + alpha-video-player-js for WebGL alpha compositing.
-Only takes over files whose dimensions match a 2:1 / 1:2 alpha-layout convention (Mp4Probe);
-ordinary videos stay with the built-in VideoViewer ("宁漏勿抢").
+Uses WebView2 + a self-written minimal WebGL compositor (`alpha-compositor.js`) that samples
+two source rects from one frame texture and outputs `rgb × alpha` with premultiplied blending.
+Detection is loose: pixel self-check picks the split layout automatically; a toolbar button
+cycles candidates and can fall back to the plain, non-composited video preview.
+Ordinary videos stay with the built-in VideoViewer ("宁漏勿抢").
 
 ## Key Files
 
 - `Plugin.cs` - IViewer entry point (Priority 100), CanHandle via Mp4Probe
 - `Probing/Mp4Probe.cs` - ISO BMFF tkhd size reader with 60s cache
 - `AlphaVideoViewerPanel.xaml.cs` - WebView2 panel, manages lifecycle and theme
-- `Resources/Web/alpha-player.html` - Player UI (HTML/CSS/JS)
-- `Resources/Web/alpha-video-player-js.js` - alpha compositing library (ES module, vendored)
+- `Resources/Web/alpha-player.html` - Player UI + auto-detection + layout candidates
+- `Resources/Web/alpha-compositor.js` - self-written WebGL alpha compositor (ES module)
 
 ## Architecture
 
@@ -32,14 +34,18 @@ Plugin.cs (IViewer)
   └── AlphaVideoViewerPanel (WPF UserControl)
         └── WebView2
               └── alpha-player.html
-                    └── alpha-video-player-js.js (WebGL compositing)
+                    └── alpha-compositor.js (WebGL compositing)
 ```
 
 ## Layout Convention
 
-- Default: left half = Alpha (R channel), right half = RGB (字节 AlphaPlayer style) → `orientation:'landscape', side:'back'`
-- Top/bottom split → `orientation:'portrait'`, alpha on top
-- Reversed assets: user flips via the toolbar button (`player.updateConfig({side})`)
+- Candidates are generated from frame geometry: strict left/right & top/bottom halves
+  (`pack:'half'`) plus Tencent-VAP style where RGB fills one half and the mask sits in a
+  quadrant of the other half at half resolution (`pack:'vap'`).
+- `runAutoDetect` samples several frames, scores each candidate by alpha purity × content
+  colorfulness × region alignment, and applies the best; if the composited frame is ~empty
+  it falls back to plain video.
+- Manual flip cycles candidates; there is no fixed side/orientation handed over from C#.
 - Supported extensions: .mp4 / .mov / .m4v only; no ZIP/JSON/VAP-metadata/YYEVA handling
 
 ## CI / Release

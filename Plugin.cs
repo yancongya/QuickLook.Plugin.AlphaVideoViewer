@@ -48,7 +48,7 @@ namespace QuickLook.Plugin.AlphaVideoViewer
             // CanHandle 阶段结果已缓存（60s TTL），此处直接复用探测数据
             var probe = Mp4Probe.Probe(path);
             if (probe != null && probe.Layout != AlphaLayout.None)
-                _viewerPanel.SetDetectedLayout(probe.Layout, probe.Width, probe.Height);
+                _viewerPanel.SetDetectedSize(probe.Width, probe.Height);
 
             _viewerPanel.LoadFile(path);
 

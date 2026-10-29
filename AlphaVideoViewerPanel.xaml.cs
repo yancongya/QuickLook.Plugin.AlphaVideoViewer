@@ -22,8 +22,6 @@ namespace QuickLook.Plugin.AlphaVideoViewer
         private Themes _theme = Themes.Dark;
         private Window _hostWindow;
 
-        private string _orientation = "landscape";
-        private string _side = "back";
         private double _rawWidth;
         private double _rawHeight;
 
@@ -65,11 +63,10 @@ namespace QuickLook.Plugin.AlphaVideoViewer
             _theme = theme;
         }
 
-        public void SetDetectedLayout(AlphaLayout layout, double width, double height)
+        public void SetDetectedSize(double width, double height)
         {
-            // 默认约定：拼接半区中 Alpha 在左/上（字节系素材），对应 side = back
-            _orientation = layout == AlphaLayout.TopBottom ? "portrait" : "landscape";
-            _side = "back";
+            // 拼接方案（半幅 / 四分幅、Alpha 在哪一侧）由前端按解码帧像素自检决定，
+            // 这里只透传探测到的帧尺寸供信息面板展示。
             _rawWidth = width;
             _rawHeight = height;
         }
@@ -113,7 +110,8 @@ namespace QuickLook.Plugin.AlphaVideoViewer
                     _webAssetsDir,
                     CoreWebView2HostResourceAccessKind.Allow);
 
-                _webView.CoreWebView2.Navigate(htmlPath);
+                // 走虚拟域名而不是 file:///：ES module import 在 file:// 下会被 CORS 拦掉
+                _webView.CoreWebView2.Navigate("https://alphaassets.local/alpha-player.html");
 
                 _hostWindow = Window.GetWindow(this);
                 if (_hostWindow != null)
@@ -245,9 +243,6 @@ namespace QuickLook.Plugin.AlphaVideoViewer
                 var msg = new
                 {
                     type = "loadFile",
-                    playerSrc = "https://alphaassets.local/alpha-video-player-js.js",
-                    orientation = _orientation,
-                    side = _side,
                     rawWidth = _rawWidth,
                     rawHeight = _rawHeight,
                     base64 = base64

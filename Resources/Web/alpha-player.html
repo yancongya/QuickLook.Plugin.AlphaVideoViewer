@@ -48,17 +48,22 @@
         #bgLayer.black { background: #000000; }
         #bgLayer.default { background: var(--bg); }
 
-        /* Stage: alpha-video-player-js appends its video + canvas here */
+        /* Stage：合成画布 + 源 video 都在此层 */
         #canvasWrap {
-            display: flex; align-items: center; justify-content: center;
             width: 100%; height: 100%;
             position: relative; z-index: 1;
             transform-origin: center center;
             overflow: hidden;
         }
-        #canvasWrap video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-        /* 库把 canvas 内联定位在 top:0/left:0；补 right/bottom + margin:auto 使其居中 */
-        #canvasWrap canvas { right: 0; bottom: 0; margin: auto; }
+        #srcVideo, #glCanvas {
+            position: absolute; inset: 0;
+            width: 100%; height: 100%;
+            object-fit: contain; background: transparent;
+        }
+        #srcVideo { visibility: hidden; }
+        /* 普通视频模式：直接显示源画面，合成画布让位 */
+        #canvasWrap.plain #srcVideo { visibility: visible; }
+        #canvasWrap.plain #glCanvas { visibility: hidden; }
 
         /* Zoom level indicator */
         #zoomInfo {
@@ -239,7 +244,9 @@
 <body>
     <div id="container">
         <div id="bgLayer" class="default"></div>
-        <div id="canvasWrap"></div>
+        <div id="canvasWrap">
+            <video id="srcVideo" muted playsinline></video>
+        </div>
         <div id="zoomInfo"></div>
         <div id="info"></div>
         <div id="toast"></div>
@@ -249,8 +256,11 @@
             <button class="btn" id="btnMeta" title="文件信息">
                 <span class="icon">&#xE946;</span>
             </button>
-            <button class="btn" id="btnFlip" title="切换Alpha位置">
+            <button class="btn" id="btnFlip" title="切换拼接方式">
                 <span class="icon">&#xE8AB;</span>
+            </button>
+            <button class="btn" id="btnMode" title="预览模式">
+                <span class="icon">&#xE786;</span>
             </button>
             <button class="btn" id="btnBg" title="切换背景">
                 <span class="icon">&#xEF1F;</span>
@@ -298,7 +308,8 @@
             'BTN_Loop': {zh:'循环',en:'Loop'},
             'BTN_Volume': {zh:'音量',en:'Volume'},
             'BTN_Meta': {zh:'文件信息',en:'Info'},
-            'BTN_Flip': {zh:'切换Alpha位置',en:'Flip alpha side'},
+            'BTN_Flip': {zh:'切换拼接方式',en:'Change packing'},
+            'BTN_Mode': {zh:'切换预览模式',en:'Change preview mode'},
             'BTN_Background': {zh:'切换背景',en:'Background'},
             'BG_Default': {zh:'默认',en:'Default'},
             'BG_Checker': {zh:'棋盘格',en:'Checkerboard'},
@@ -314,8 +325,18 @@
             'META_Layout': {zh:'拼接方式',en:'Layout'},
             'META_AlphaSide': {zh:'Alpha 位置',en:'Alpha side'},
             'META_Duration': {zh:'时长',en:'Duration'},
-            'LAYOUT_SideBySide': {zh:'左右拼接',en:'Side by side'},
-            'LAYOUT_TopBottom': {zh:'上下拼接',en:'Top / bottom'},
+            'META_Mode': {zh:'预览模式',en:'Mode'},
+            'META_Confidence': {zh:'自检',en:'Self-check'},
+            'MODE_Alpha': {zh:'透明合成',en:'Alpha'},
+            'MODE_Video': {zh:'普通视频',en:'Plain video'},
+            'MODE_Tip_Alpha': {zh:'当前：透明合成预览（点击切到普通视频）',en:'Alpha compositing (click for plain video)'},
+            'MODE_Tip_Video': {zh:'当前：普通视频预览，不合成透明（点击切回透明合成）',en:'Plain video (click for alpha compositing)'},
+            'PACK_Half': {zh:'半幅拼接',en:'Half'},
+            'PACK_Vap': {zh:'四分幅拼接',en:'Quarter mask'},
+            'AUTO_Confirmed': {zh:'已确认拼接',en:'split confirmed'},
+            'AUTO_NotSplit': {zh:'不像拼接素材，已切普通视频',en:'not a split asset, plain video'},
+            'AUTO_Failed': {zh:'未能判定，保持当前',en:'inconclusive'},
+            'AUTO_Skipped': {zh:'未判定（手动指定）',en:'not checked'},
             'SIDE_Left': {zh:'左',en:'Left'},
             'SIDE_Right': {zh:'右',en:'Right'},
             'SIDE_Top': {zh:'上',en:'Top'},
@@ -329,6 +350,7 @@
 
         var statusEl = document.getElementById('status');
         var stage = document.getElementById('canvasWrap');
+        var srcVideo = document.getElementById('srcVideo');
         var bgLayer = document.getElementById('bgLayer');
         var controls = document.getElementById('controls');
         var topBar = document.getElementById('topBar');
@@ -338,6 +360,7 @@
         var btnBg = document.getElementById('btnBg');
         var btnMeta = document.getElementById('btnMeta');
         var btnFlip = document.getElementById('btnFlip');
+        var btnMode = document.getElementById('btnMode');
         var metaPanel = document.getElementById('metaPanel');
         var colorPicker = document.getElementById('colorPicker');
         var customColor = document.getElementById('customColor');
@@ -352,12 +375,16 @@
         var toastEl = document.getElementById('toast');
         var zoomInfoEl = document.getElementById('zoomInfo');
 
-        var player = null, blobUrl = null, videoEl = null;
+        var compositor = null, blobUrl = null;
         var isPlaying = false, isLooping = true, isDragging = false;
         var duration = 0;
         var hideTimer = null;
-        var orientation = 'landscape', side = 'back';
-        var rawW = 0, rawH = 0;
+        var rawW = 0, rawH = 0;          // 探测到的 tkhd 尺寸，仅信息展示
+        var vw = 0, vh = 0;              // 实际解码帧尺寸
+        // auto = 由像素自检决定合成/退回普通视频；alpha / video = 用户锁定
+        var viewMode = 'auto', autoChecked = false, autoNote = '';
+        // 当前生效的拼接方案
+        var candidates = [], current = null, lastScores = null;
 
         window.applyI18n = function() {
             lang = window.__lang || lang;
@@ -367,6 +394,7 @@
             btnMute.title = T('BTN_Volume');
             btnMeta.title = T('BTN_Meta');
             btnFlip.title = T('BTN_Flip');
+            btnMode.title = T('BTN_Mode');
             btnBg.title = T('BTN_Background');
             document.querySelector('.swatch[data-bg="default"]').title = T('BG_Default');
             document.querySelector('.swatch[data-bg="checker"]').title = T('BG_Checker');
@@ -374,6 +402,9 @@
             document.querySelector('.swatch[data-bg="black"]').title = T('BG_Black');
             customColor.title = T('BG_Custom');
             statusEl.textContent = T('STATUS_Loading');
+            updateModeBtn();
+            updateInfo();
+            if (metaPinned) updateMetaPanel();
         };
         applyI18n();
 
@@ -381,14 +412,14 @@
         var volume = 0;
         var isMuted = true;
 
-        var ICON_PLAY = '';
-        var ICON_PAUSE = '';
-        var ICON_LOOP_OFF = '';
-        var ICON_LOOP_ON = '';
-        var ICON_VOL3 = '';
-        var ICON_VOL2 = '';
-        var ICON_VOL1 = '';
-        var ICON_VOL0 = '';
+        var ICON_PLAY = '\uE768';
+        var ICON_PAUSE = '\uE769';
+        var ICON_LOOP_OFF = '\uE8D8';
+        var ICON_LOOP_ON = '\uE777';
+        var ICON_VOL3 = '\uE767';
+        var ICON_VOL2 = '\uE994';
+        var ICON_VOL1 = '\uE993';
+        var ICON_VOL0 = '\uE74F';
 
         // --- Toast ---
         var toastTimer = null;
@@ -399,23 +430,104 @@
             toastTimer = setTimeout(function() { toastEl.classList.remove('show'); }, 1500);
         }
 
+        // --- 拼接方案：两块「源矩形」，帧归一化 [x, y, w, h] ---
+        // half：长边切两半，两半同尺寸（字节 AlphaPlayer / 传统 RGB+Alpha）
+        // vap ：主区占一半，遮罩占另一半里的一个四分块（恒为主区 1/2 分辨率）
+        var QUAD_KEYS = ['tl', 'tr', 'bl', 'br'];
+        var QUAD_LABEL = {
+            tl: ['左上', 'Top-left'], tr: ['右上', 'Top-right'],
+            bl: ['左下', 'Bottom-left'], br: ['右下', 'Bottom-right']
+        };
+        var HALF_LABEL = { left: 'SIDE_Left', right: 'SIDE_Right', top: 'SIDE_Top', bottom: 'SIDE_Bottom' };
+
+        // 每块候选记两份位置：rgbKey = 画面所在半区，maskKey = 遮罩所在半区
+        function halves(split) {
+            return split === 'lr'
+                ? [{ rgb: [0, 0, 0.5, 1], alpha: [0.5, 0, 0.5, 1], rgbKey: 'left', maskKey: 'right' },
+                   { rgb: [0.5, 0, 0.5, 1], alpha: [0, 0, 0.5, 1], rgbKey: 'right', maskKey: 'left' }]
+                : [{ rgb: [0, 0, 1, 0.5], alpha: [0, 0.5, 1, 0.5], rgbKey: 'top', maskKey: 'bottom' },
+                   { rgb: [0, 0.5, 1, 0.5], alpha: [0, 0, 1, 0.5], rgbKey: 'bottom', maskKey: 'top' }];
+        }
+
+        // split 线是竖向（lr）还是横向（tb）
+        // 主区占一个半区，遮罩占另一半里的一个四分块（恒为主区 1/2 分辨率）
+        function vapCandidates(split) {
+            var out = [];
+            var pairs = split === 'lr'
+                ? [{ rgb: [0, 0, 0.5, 1], other: [0.5, 0, 0.5, 1], rgbKey: 'left', maskHalf: 'right' },
+                   { rgb: [0.5, 0, 0.5, 1], other: [0, 0, 0.5, 1], rgbKey: 'right', maskHalf: 'left' }]
+                : [{ rgb: [0, 0, 1, 0.5], other: [0, 0.5, 1, 0.5], rgbKey: 'top', maskHalf: 'bottom' },
+                   { rgb: [0, 0.5, 1, 0.5], other: [0, 0, 1, 0.5], rgbKey: 'bottom', maskHalf: 'top' }];
+            for (var m = 0; m < pairs.length; m++) {
+                var o = pairs[m].other;
+                for (var i = 0; i < QUAD_KEYS.length; i++) {
+                    var q = QUAD_KEYS[i];
+                    var qx = o[0] + (q === 'tr' || q === 'br' ? o[2] / 2 : 0);
+                    var qy = o[1] + (q === 'bl' || q === 'br' ? o[3] / 2 : 0);
+                    out.push({
+                        pack: 'vap', split: split,
+                        main: pairs[m].rgbKey, maskHalf: pairs[m].maskHalf, quad: q,
+                        rgb: pairs[m].rgb, alpha: [qx, qy, o[2] / 2, o[3] / 2]
+                    });
+                }
+            }
+            return out;
+        }
+
+        function halfCandidates(split) {
+            return halves(split).map(function(h) {
+                return {
+                    pack: 'half', split: split,
+                    main: h.rgbKey, maskHalf: h.maskKey, quad: null,
+                    rgb: h.rgb, alpha: h.alpha
+                };
+            });
+        }
+
+        // 两种切分方向都试：真实素材常见「主体只占画布一角 + 大块黑边」，
+        // 只按长边切会漏掉（例：750x814 的 VAP 其实是左右半 + 上下黑边）
+        function buildCandidates() {
+            if (vw === 0 || vh === 0) return [];
+            var out = [];
+            out = out.concat(halfCandidates('lr'), halfCandidates('tb'));
+            out = out.concat(vapCandidates('lr'), vapCandidates('tb'));
+            for (var i = 0; i < out.length; i++)
+                out[i].weight = out[i].pack === 'half' ? 1 : 0.98;
+            return out;
+        }
+
+        function packLabel(c) {
+            return c ? (c.pack === 'half' ? T('PACK_Half') : T('PACK_Vap')) : '-';
+        }
+        function sideLabel(c) {
+            if (!c) return '-';
+            var base = T(HALF_LABEL[c.maskHalf]);
+            if (c.pack === 'half' || !c.quad) return base;
+            var q = QUAD_LABEL[c.quad];
+            return base + (lang === 'zh' ? '·' + q[0] : ' · ' + q[1]);
+        }
+        function splitLabel(c) {
+            if (!c) return '-';
+            return c.split === 'lr' ? T('SIDE_Left') + '/' + T('SIDE_Right')
+                                    : T('SIDE_Top') + '/' + T('SIDE_Bottom');
+        }
+
         // --- Meta panel ---
-        function displaySize() {
-            if (rawW <= 0 || rawH <= 0) return '-';
-            if (orientation === 'portrait') return Math.round(rawW) + '\u00d7' + Math.round(rawH / 2);
-            return Math.round(rawW / 2) + '\u00d7' + Math.round(rawH);
+        function visibleSize() {
+            if (!current || !current.outRect) return '-';
+            return current.outRect[0] + '\u00d7' + current.outRect[1];
         }
-        function alphaSideLabel() {
-            if (orientation === 'portrait') return side === 'back' ? T('SIDE_Top') : T('SIDE_Bottom');
-            return side === 'back' ? T('SIDE_Left') : T('SIDE_Right');
-        }
+        function displaySize() { return visibleSize(); }
+        function modeLabel() { return viewMode === 'video' ? T('MODE_Video') : T('MODE_Alpha'); }
         function updateMetaPanel() {
             var dur = duration ? duration.toFixed(2) + 's' : '-';
             metaPanel.innerHTML =
                 '<div class="meta-row"><span class="label">' + T('META_Display') + '</span><span class="value">' + displaySize() + '</span></div>' +
-                '<div class="meta-row"><span class="label">' + T('META_Source') + '</span><span class="value">' + Math.round(rawW) + '\u00d7' + Math.round(rawH) + '</span></div>' +
-                '<div class="meta-row"><span class="label">' + T('META_Layout') + '</span><span class="value">' + (orientation === 'portrait' ? T('LAYOUT_TopBottom') : T('LAYOUT_SideBySide')) + '</span></div>' +
-                '<div class="meta-row"><span class="label">' + T('META_AlphaSide') + '</span><span class="value">' + alphaSideLabel() + '</span></div>' +
+                '<div class="meta-row"><span class="label">' + T('META_Source') + '</span><span class="value">' + (rawW ? Math.round(rawW) + '\u00d7' + Math.round(rawH) : vw + '\u00d7' + vh) + '</span></div>' +
+                '<div class="meta-row"><span class="label">' + T('META_Layout') + '</span><span class="value">' + packLabel(current) + ' · ' + splitLabel(current) + '</span></div>' +
+                '<div class="meta-row"><span class="label">' + T('META_AlphaSide') + '</span><span class="value">' + sideLabel(current) + '</span></div>' +
+                '<div class="meta-row"><span class="label">' + T('META_Mode') + '</span><span class="value">' + modeLabel() + '</span></div>' +
+                '<div class="meta-row"><span class="label">' + T('META_Confidence') + '</span><span class="value">' + (autoChecked ? (autoNote || T('AUTO_Confirmed')) : T('AUTO_Skipped')) + '</span></div>' +
                 '<div class="meta-row"><span class="label">' + T('META_Duration') + '</span><span class="value">' + dur + '</span></div>';
         }
 
@@ -441,14 +553,351 @@
             if (!metaPinned) metaPanel.classList.remove('show');
         });
 
-        // --- Alpha side flip ---
-        btnFlip.addEventListener('click', function() {
-            if (!player) return;
-            side = side === 'back' ? 'front' : 'back';
-            player.updateConfig({ side: side });
-            showToast('Alpha: ' + alphaSideLabel());
+        // --- 像素统计：判定某区域「像不像遮罩」/「像不像画面」，并给出非黑包围盒 ---
+        var GRAY_MAX = 14, COLOR_MIN = 24, BLACK_MIN = 10;
+
+        function measure(p, r, w, h) {
+            var x0 = Math.floor(r[0] * w), y0 = Math.floor(r[1] * h);
+            var x1 = Math.ceil((r[0] + r[2]) * w), y1 = Math.ceil((r[1] + r[3]) * h);
+            if (x1 <= x0 + 1 || y1 <= y0 + 1) return null;
+            var gray = 0, chromaSum = 0, sqSum = 0, n = 0, satMax = 0;
+            var lumaMin = 255, lumaMax = 0, lumaSum = 0;
+            var bx0 = x1, by0 = y1, bx1 = -1, by1 = -1;
+            for (var y = y0; y < y1; y++) {
+                for (var x = x0; x < x1; x++) {
+                    var i = (y * w + x) * 4;
+                    var cr = p[i], cg = p[i + 1], cb = p[i + 2];
+                    var mx = cr > cg ? (cr > cb ? cr : cb) : (cg > cb ? cg : cb);
+                    var mn = cr < cg ? (cr < cb ? cr : cb) : (cg < cb ? cg : cb);
+                    var diff = Math.max(Math.abs(cr - cg), Math.abs(cg - cb), Math.abs(cr - cb));
+                    if (diff <= GRAY_MAX) gray++;
+                    chromaSum += diff;
+                    var luma = (cr + cg + cb) / 3;
+                    sqSum += luma * luma; lumaSum += luma; n++;
+                    if (luma < lumaMin) lumaMin = luma;
+                    if (luma > lumaMax) lumaMax = luma;
+                    if (mx > satMax) satMax = mx;
+                    if (mx >= BLACK_MIN) {
+                        if (x < bx0) bx0 = x;
+                        if (x > bx1) bx1 = x;
+                        if (y < by0) by0 = y;
+                        if (y > by1) by1 = y;
+                    }
+                }
+            }
+            if (!n) return null;
+            var mean = lumaSum / n;
+            var bbox = bx1 < 0 ? null : [bx0 / w, by0 / h, (bx1 - bx0 + 1) / w, (by1 - by0 + 1) / h];
+            var rel = null;
+            if (bbox) {
+                var rw = x1 - x0, rh = y1 - y0;
+                rel = [(bx0 - x0) / rw, (by0 - y0) / rh, (bx1 - bx0 + 1) / rw, (by1 - by0 + 1) / rh];
+            }
+            return {
+                grayRatio: gray / n,
+                chroma: chromaSum / n,
+                satMax: satMax,
+                spread: lumaMax - lumaMin,
+                variance: Math.sqrt(Math.max(0, sqSum / n - mean * mean)),
+                bbox: bbox,
+                rel: rel
+            };
+        }
+
+        // 遮罩与画面是同一块逻辑区域的两个视图，所以判据是相对的：遮罩必须比画面更「灰」。
+        // 绝对阈值只用来排除纯黑/纯白的空块，否则整块黑边也会被当成遮罩。
+        function isAlphaLike(A, C) {
+            if (!A || !C) return false;
+            if (A.grayRatio < 0.9 || A.chroma > 12) return false;
+            if (!A.bbox) return false;
+            // 恒定纯色的 alpha（全不透明/全透明的常数遮罩）亮度跨度为 0，正常判据会漏掉。
+            // 但只要对侧确实是彩色画面就接受它；否则宁可漏判，也不把同色的黑边当成遮罩。
+            if (A.spread < 48 && C.chroma < GRAY_MAX + 4) return false;
+            return A.grayRatio >= C.grayRatio - 0.02 && A.chroma <= C.chroma + 3;
+        }
+
+        function isContentLike(m) {
+            if (!m) return false;
+            if (m.satMax < 8 || m.spread < 40) return false;
+            return m.variance >= 12;
+        }
+
+        // 遮罩与画面在各自区域内的相对包围盒越一致，方案越可能是真的拼接方式
+        // （把 VAP 的四分块遮罩当成半幅时，遮罩只填满自己区域的 1/2，画面却填满 → 偏差 0.5）
+        // 但恒定纯色遮罩（全不透明/常数灰）本就铺满整块，其包围盒与画面剪影天然不同，不做对齐惩罚。
+        function alignFactor(a, c, alphaSolid) {
+            if (alphaSolid) return 1;
+            if (!a || !c) return 0;
+            var dev = Math.max(Math.abs(a[0] - c[0]), Math.abs(a[1] - c[1]),
+                               Math.abs(a[2] - c[2]), Math.abs(a[3] - c[3]));
+            return Math.max(0, 1 - dev / 0.5);
+        }
+
+        // 两块区域共用一套「逻辑坐标」（各自区域内的相对位置 0..1）；
+        // 跨采样帧取并集，得到素材真正占据的范围，用来裁掉画布黑边又不切掉羽化边缘。
+        // 恒定纯色遮罩铺满整块，不能拿它的包围盒去撑大范围，只按画面剪影裁剪。
+        function mergeLogical(acc, A, C, alphaSolid) {
+            if (!A || !C || !C.rel) return acc;
+            var x = acc ? acc[0] : 1, y = acc ? acc[1] : 1;
+            var x2 = acc ? acc[0] + acc[2] : 0, y2 = acc ? acc[1] + acc[3] : 0;
+            var parts = (!alphaSolid && A.rel) ? [A.rel, C.rel] : [C.rel];
+            for (var i = 0; i < parts.length; i++) {
+                x = Math.min(x, parts[i][0]);
+                y = Math.min(y, parts[i][1]);
+                x2 = Math.max(x2, parts[i][0] + parts[i][2]);
+                y2 = Math.max(y2, parts[i][1] + parts[i][3]);
+            }
+            x = Math.max(0, x); y = Math.max(0, y);
+            x2 = Math.min(1, x2); y2 = Math.min(1, y2);
+            if (x2 - x < 0.05 || y2 - y < 0.05) return acc || [0, 0, 1, 1];
+            return [x, y, x2 - x, y2 - y];
+        }
+
+        // 逻辑矩形映射回两块源矩形；输出尺寸按主区（分辨率更高的一块）算
+        function rectsFromLogical(cand, lg) {
+            var a = cand.alpha, c = cand.rgb;
+            if (!lg) lg = [0, 0, 1, 1];
+            return {
+                rgb: [c[0] + lg[0] * c[2], c[1] + lg[1] * c[3], lg[2] * c[2], lg[3] * c[3]],
+                alpha: [a[0] + lg[0] * a[2], a[1] + lg[1] * a[3], lg[2] * a[2], lg[3] * a[3]],
+                out: {
+                    w: Math.max(2, Math.round(lg[2] * c[2] * vw)),
+                    h: Math.max(2, Math.round(lg[3] * c[3] * vh))
+                }
+            };
+        }
+
+        // 手动切换方案时没有历史统计，就按当前帧现算一次并集
+        async function logicalFor(cand) {
+            if (cand._lg) return cand._lg;
+            var frame = grabFrame();
+            if (!frame) return null;
+            var A = measure(frame.data, cand.alpha, frame.w, frame.h);
+            var C = measure(frame.data, cand.rgb, frame.w, frame.h);
+            return mergeLogical(null, A, C, !!A && A.spread < 48);
+        }
+
+        function grabFrame() {
+            if (!srcVideo || srcVideo.readyState < 2 || !srcVideo.videoWidth) return null;
+            var target = 160;
+            var k = target / Math.max(srcVideo.videoWidth, srcVideo.videoHeight);
+            var w = Math.max(16, Math.round(srcVideo.videoWidth * k));
+            var h = Math.max(16, Math.round(srcVideo.videoHeight * k));
+            var cv = grabFrame._cv || (grabFrame._cv = document.createElement('canvas'));
+            cv.width = w; cv.height = h;
+            var ctx = cv.getContext('2d', { willReadFrequently: true });
+            ctx.clearRect(0, 0, w, h);
+            ctx.drawImage(srcVideo, 0, 0, w, h);
+            return { data: ctx.getImageData(0, 0, w, h).data, w: w, h: h };
+        }
+
+        function seekAndSample(time) {
+            return new Promise(function(resolve) {
+                var done = false;
+                function finish() {
+                    if (done) return;
+                    done = true;
+                    srcVideo.removeEventListener('seeked', onSeeked);
+                    clearTimeout(timer);
+                    resolve(grabFrame());
+                }
+                function onSeeked() { finish(); }
+                srcVideo.addEventListener('seeked', onSeeked);
+                var timer = setTimeout(finish, 1500);
+                try { srcVideo.currentTime = time; } catch (e) { finish(); }
+            });
+        }
+
+        // 每个候选方案在多帧里取最好的一次：首帧可能正好是空遮罩
+        async function runAutoDetect() {
+            if (viewMode !== 'auto') { autoChecked = true; autoNote = T('AUTO_Skipped'); return; }
+            if (!candidates.length || !vw) { autoChecked = true; autoNote = T('AUTO_Failed'); return; }
+
+            var times = [0];
+            if (duration > 0.6) { times.push(duration * 0.35); times.push(duration * 0.7); }
+
+            var scores = candidates.map(function() { return { best: 0, lg: null }; });
+            for (var t = 0; t < times.length; t++) {
+                var frame = await seekAndSample(times[t]);
+                if (!frame) continue;
+                for (var i = 0; i < candidates.length; i++) {
+                    var c = candidates[i];
+                    var A = measure(frame.data, c.alpha, frame.w, frame.h);
+                    var C = measure(frame.data, c.rgb, frame.w, frame.h);
+                    if (!isAlphaLike(A, C) || !isContentLike(C)) continue;
+                    var solid = A.spread < 48;
+                    // 判据是「遮罩有多纯灰 × 画面有多彩」，而不是亮度跨度——
+                    // 垂直误切会把两块都切成灰彩混合，纯度天然低；正确的纯色遮罩纯度最高。
+                    var purity = A.grayRatio * (1 - Math.min(1, A.chroma / GRAY_MAX));
+                    var color = Math.min(1, C.chroma / COLOR_MIN);
+                    var s = c.weight * (0.45 + 0.55 * purity)
+                                * (0.45 + 0.55 * color)
+                                * (0.5 + 0.5 * alignFactor(A.rel, C.rel, solid));
+                    if (s > scores[i].best) scores[i].best = s;
+                    scores[i].lg = mergeLogical(scores[i].lg, A, C, solid);
+                }
+            }
+
+            lastScores = candidates.map(function (c, i) {
+                return {
+                    pack: c.pack, rgb: c.main, mask: c.maskHalf + (c.quad ? '/' + c.quad : ''),
+                    score: +scores[i].best.toFixed(3)
+                };
+            });
+
+            var bi = -1, bs = 0;
+            for (var j = 0; j < scores.length; j++) if (scores[j].best > bs) { bs = scores[j].best; bi = j; }
+
+            autoChecked = true;
+            try { srcVideo.currentTime = 0; } catch (e) { }
+
+            if (bi < 0) {
+                autoNote = T('AUTO_NotSplit');
+                log('auto-detect: nothing looks like a split asset -> plain video');
+                enterVideoMode();
+                return;
+            }
+            autoNote = bs >= 0.9 ? T('AUTO_Confirmed') : T('AUTO_Confirmed') + ' ~';
+            await applyPacking(candidates[bi], scores[bi].lg);
+
+            // 合成结果在多个时间点几乎全透明 = 这块「遮罩」把画面整个抹没了，并不是可用的拼接，
+            // 退回普通预览（宁漏勿抢：宁可当普通视频，也不显示一片空白）。
+            var cov = await compositedVisibility();
+            if (cov !== null && cov < 0.02) {
+                autoNote = T('AUTO_NotSplit');
+                log('auto-detect: composited frame is ~empty (coverage=' + cov.toFixed(3) + ') -> plain video');
+                enterVideoMode();
+                return;
+            }
+
+            log('auto-detect: ' + candidates[bi].pack + '/' + candidates[bi].main + '/' +
+                candidates[bi].quad + ' score=' + bs.toFixed(2));
             updateInfo();
             if (metaPinned) updateMetaPanel();
+            showToast(sideLabel(current));
+        }
+
+        // 取样时刻（跳过首帧淡入空白）下合成画布里 alpha 明显不为 0 的像素占比，取最好的一次
+        function compositedVisibility() {
+            return new Promise(function (resolve) {
+                if (!compositor || !compositor.readback) return resolve(null);
+                var times = duration > 0.8 ? [duration * 0.35, duration * 0.7] : [Math.max(0.05, duration * 0.5)];
+                var best = -1, ti = 0;
+                function finish() { try { srcVideo.currentTime = 0; } catch (e) { } resolve(best < 0 ? null : best); }
+                function step() {
+                    if (ti >= times.length) return finish();
+                    var at = times[ti++];
+                    var settled = false;
+                    function onSeeked() {
+                        if (settled) return; settled = true;
+                        srcVideo.removeEventListener('seeked', onSeeked);
+                        requestAnimationFrame(function () {
+                            var rb = null;
+                            try { rb = compositor.readback(); } catch (e) { }
+                            if (rb) {
+                                var n = rb.w * rb.h, vis = 0;
+                                for (var i = 0; i < n; i++) if (rb.data[i * 4 + 3] > 24) vis++;
+                                best = Math.max(best, vis / n);
+                            }
+                            step();
+                        });
+                    }
+                    srcVideo.addEventListener('seeked', onSeeked);
+                    setTimeout(onSeeked, 1200);
+                    try { srcVideo.currentTime = at; } catch (e) { onSeeked(); }
+                }
+                step();
+            });
+        }
+
+        // --- 合成器 ---
+        async function buildCompositor() {
+            if (compositor) { try { compositor.destroy(); } catch (e) { } compositor = null; }
+            if (!vw || !vh) return;
+            var mod = await import('./alpha-compositor.js');
+            var rects = current || candidates[0];
+            if (!rects) return;
+            var m = rectsFromLogical(rects, rects._lg);
+            compositor = mod.default({
+                container: stage,
+                video: srcVideo,
+                rects: { rgb: m.rgb, alpha: m.alpha },
+                outSize: { w: Math.round(m.out.w), h: Math.round(m.out.h) },
+                maxSide: 1280
+            });
+        }
+
+        async function applyPacking(cand, lg) {
+            current = cand;
+            cand._lg = lg || null;
+            var m = rectsFromLogical(cand, lg);
+            cand.outRect = [m.out.w, m.out.h];
+            cand.srcRgb = m.rgb.map(function (v) { return +v.toFixed(4); });
+            cand.srcAlpha = m.alpha.map(function (v) { return +v.toFixed(4); });
+            if (!compositor) await buildCompositor();
+            if (!compositor) { enterVideoMode(); return; }
+            compositor.setRects({ rgb: m.rgb, alpha: m.alpha });
+            compositor.setSize(m.out.w, m.out.h);
+            if (viewMode === 'video') enterAlphaMode();
+            else { viewMode = 'alpha'; setActive(true); updateModeBtn(); }
+        }
+
+        function setActive(on) {
+            if (compositor && compositor.setActive) compositor.setActive(on);
+        }
+
+        // --- 预览模式切换（透明合成 / 普通视频）---
+        function enterVideoMode() {
+            if (viewMode === 'video') return;
+            viewMode = 'video';
+            stage.classList.add('plain');
+            setActive(false);
+            srcVideo.play().catch(function() { });
+            if (!rafId) rafId = requestAnimationFrame(tick);
+            updateModeBtn();
+            updateInfo();
+            if (metaPinned) updateMetaPanel();
+            showToast(T('MODE_Video'));
+        }
+
+        function enterAlphaMode() {
+            viewMode = 'alpha';
+            if (!current && candidates.length) current = candidates[0];
+            stage.classList.remove('plain');
+            if (!compositor) {
+                buildCompositor().then(function() {
+                    if (current) applyPacking(current, current._lg);
+                });
+            } else setActive(true);
+            srcVideo.play().catch(function() { });
+            updateModeBtn();
+            updateInfo();
+            if (metaPinned) updateMetaPanel();
+            showToast(T('MODE_Alpha'));
+        }
+
+        function updateModeBtn() {
+            btnMode.classList.toggle('active', viewMode === 'video');
+            btnMode.title = viewMode === 'video' ? T('MODE_Tip_Video') : T('MODE_Tip_Alpha');
+        }
+
+        btnMode.addEventListener('click', function() {
+            if (viewMode === 'video') enterAlphaMode();
+            else enterVideoMode();
+        });
+
+        // --- 手动切换拼接方案：在当前几何允许的所有候选里循环 ---
+        btnFlip.addEventListener('click', function() {
+            if (!candidates.length) return;
+            var idx = current ? candidates.indexOf(current) : -1;
+            var next = candidates[(idx + 1 + candidates.length) % candidates.length];
+            autoChecked = true;
+            autoNote = T('AUTO_Skipped');
+            logicalFor(next).then(function (lg) { return applyPacking(next, lg); }).then(function() {
+                showToast(packLabel(next) + ' · ' + sideLabel(next));
+                updateInfo();
+                if (metaPinned) updateMetaPanel();
+            });
         });
 
         // --- Background switcher ---
@@ -535,7 +984,8 @@
         }
 
         function updateInfo() {
-            infoEl.textContent = displaySize() + ' \u00b7 ' + (orientation === 'portrait' ? T('LAYOUT_TopBottom') : T('LAYOUT_SideBySide')) + ' \u00b7 Alpha ' + alphaSideLabel();
+            infoEl.textContent = (viewMode === 'video' ? T('MODE_Video')
+                : visibleSize() + ' \u00b7 ' + packLabel(current) + ' \u00b7 ' + sideLabel(current));
         }
 
         // --- Volume ---
@@ -550,8 +1000,8 @@
         function applyVolume() {
             var v = isMuted ? 0 : volume;
             volumeSlider.value = Math.round(v * 100);
-            if (player) player.setMute(isMuted || v === 0);
-            if (videoEl) videoEl.volume = v;
+            srcVideo.volume = v;
+            srcVideo.muted = isMuted || v === 0;
             updateVolumeIcon();
         }
 
@@ -648,11 +1098,14 @@
 
         var rafId = 0;
         function tick() {
-            if (videoEl && duration > 0 && !isDragging) {
-                updateProgress(Math.min(1, videoEl.currentTime / duration));
-            }
+            if (duration > 0 && !isDragging)
+                updateProgress(Math.min(1, srcVideo.currentTime / duration));
             rafId = requestAnimationFrame(tick);
         }
+
+        srcVideo.addEventListener('play', function() { isPlaying = true; updatePlayBtn(); });
+        srcVideo.addEventListener('pause', function() { isPlaying = false; updatePlayBtn(); });
+        srcVideo.addEventListener('ended', function() { isPlaying = false; updatePlayBtn(); });
 
         function getProgressFromEvent(e) {
             var rect = progressWrap.getBoundingClientRect();
@@ -662,12 +1115,12 @@
         progressWrap.addEventListener('mousedown', function(e) {
             isDragging = true; progressWrap.classList.add('dragging');
             var p = getProgressFromEvent(e); updateProgress(p);
-            if (player && duration > 0) player.setCurrentTime(p * duration);
+            if (duration > 0) srcVideo.currentTime = p * duration;
         });
         document.addEventListener('mousemove', function(e) {
             if (isDragging) {
                 var p = getProgressFromEvent(e); updateProgress(p);
-                if (player && duration > 0) player.setCurrentTime(p * duration);
+                if (duration > 0) srcVideo.currentTime = p * duration;
             }
         });
         document.addEventListener('mouseup', function() {
@@ -676,77 +1129,86 @@
 
         // --- Buttons ---
         btnPlay.addEventListener('click', function() {
-            if (!player) return;
-            if (isPlaying) player.pause(); else player.play();
+            if (isPlaying) srcVideo.pause(); else srcVideo.play().catch(function() { });
         });
 
         btnLoop.addEventListener('click', function() {
             isLooping = !isLooping;
             btnLoop.classList.toggle('active', isLooping);
             btnLoop.querySelector('.icon').textContent = isLooping ? ICON_LOOP_ON : ICON_LOOP_OFF;
-            if (player) player.setLoop(isLooping);
+            srcVideo.loop = isLooping;
         });
 
-        // --- Load video via alpha-video-player-js ---
+        // --- Load ---
+        function decode(msgBase64) {
+            var raw = atob(msgBase64);
+            var buf = new Uint8Array(raw.length);
+            for (var i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+            return URL.createObjectURL(new Blob([buf], { type: 'video/mp4' }));
+        }
+
+        function waitForMetadata(timeoutMs) {
+            return new Promise(function(resolve, reject) {
+                if (srcVideo.readyState >= 1 && srcVideo.videoWidth) { resolve(); return; }
+                var timer = setTimeout(function() { reject(new Error('metadata timeout')); }, timeoutMs);
+                srcVideo.addEventListener('loadedmetadata', function() {
+                    clearTimeout(timer); resolve();
+                }, { once: true });
+                srcVideo.addEventListener('error', function() {
+                    clearTimeout(timer);
+                    var c = srcVideo.error ? srcVideo.error.code : '?';
+                    reject(new Error('decode failed (code ' + c + ')'));
+                }, { once: true });
+            });
+        }
+
         async function loadFile(msg) {
             try {
                 statusEl.textContent = T('STATUS_Decoding');
                 statusEl.style.display = '';
 
-                orientation = msg.orientation || 'landscape';
-                side = msg.side || 'back';
                 rawW = msg.rawWidth || 0;
                 rawH = msg.rawHeight || 0;
+                viewMode = 'auto';
+                autoChecked = false;
+                autoNote = '';
+                current = null;
+                candidates = [];
+                duration = 0;
+                stage.classList.remove('plain');
+                updateModeBtn();
 
-                if (player) { try { player.destroy(); } catch(e){} player = null; }
-                if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+                if (compositor) { try { compositor.destroy(); } catch (e) { } compositor = null; }
+                srcVideo.pause();
+                // 只有真加载过才 reset：空 src 上调用 load() 会异步抛 code 4，误判成解码失败
+                if (blobUrl) {
+                    URL.revokeObjectURL(blobUrl);
+                    blobUrl = null;
+                    srcVideo.removeAttribute('src');
+                    srcVideo.load();
+                }
 
-                var mod = await import(msg.playerSrc);
-                var Render = mod.default;
-
-                var raw = atob(msg.base64);
-                var buf = new Uint8Array(raw.length);
-                for (var i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
-                blobUrl = URL.createObjectURL(new Blob([buf], { type: 'video/mp4' }));
-
-                player = new Render({
-                    container: stage,
-                    src: blobUrl,
-                    orientation: orientation,
-                    side: side,
-                    muted: isMuted,
-                    loop: isLooping,
-                    autoResize: 'contain',
-                    debug: false,
-                    onInitSuccess: function() { log('player init'); },
-                    onInitError: function(e) { fail('WebGL init failed'); },
-                    onCanPlay: function() {
-                        // 库把 video 挂在 document.body 而非 container，两处都兜一下
-                        videoEl = stage.querySelector('video') || document.querySelector('video');
-                        if (videoEl) {
-                            duration = videoEl.duration || 0;
-                            videoEl.volume = volume;
-                        }
-                        statusEl.style.display = 'none';
-                        updateInfo();
-                        updatePlayBtn();
-                        if (!rafId) rafId = requestAnimationFrame(tick);
-                        if (window.chrome && window.chrome.webview)
-                            window.chrome.webview.postMessage({type:'loaded'});
-                        log('canplay, duration=' + duration);
-                    },
-                    onPlay: function() { isPlaying = true; updatePlayBtn(); },
-                    onPause: function() { isPlaying = false; updatePlayBtn(); },
-                    onEnded: function() { isPlaying = false; updatePlayBtn(); },
-                    onLoop: function() { },
-                    onError: function(e) {
-                        var m = (e && (e.message || e.toString())) || 'unknown';
-                        fail(m);
-                    }
-                });
-
+                blobUrl = decode(msg.base64);
+                srcVideo.src = blobUrl;
+                srcVideo.loop = isLooping;
                 applyVolume();
-                await player.play();
+
+                await waitForMetadata(8000);
+                vw = srcVideo.videoWidth; vh = srcVideo.videoHeight;
+                duration = srcVideo.duration || 0;
+                candidates = buildCandidates();
+
+                statusEl.style.display = 'none';
+                updateInfo();
+                updatePlayBtn();
+                if (!rafId) rafId = requestAnimationFrame(tick);
+                if (window.chrome && window.chrome.webview)
+                    window.chrome.webview.postMessage({type:'loaded'});
+                log('metadata ' + vw + 'x' + vh + ', ' + candidates.length + ' candidates');
+
+                await buildCompositor();
+                await runAutoDetect();
+                srcVideo.play().catch(function() { });
             } catch (err) {
                 fail(err.message || String(err));
             }
@@ -766,29 +1228,83 @@
             if (msg.type === 'loadFile') loadFile(msg);
         });
 
-        // --- Self-test: ?autotest=side|top 或 ?autotest=<url-encoded 路径>|WxH|landscape|portrait（单参数避免 & 被 shell 吃掉）---
+        // --- Self-test: ?autotest=side|top 或 ?autotest=<url-encoded 路径>|WxH（单参数避免 & 被 shell 吃掉）---
         var autotest = new URLSearchParams(location.search).get('autotest');
         if (autotest) {
-            var sample, o = 'landscape', rw = 0, rh = 0;
+            var sample, rw = 0, rh = 0;
             if (autotest === 'side') { sample = '/Samples/alpha_side_by_side.mp4'; rw = 512; rh = 256; }
-            else if (autotest === 'top') { sample = '/Samples/alpha_top_bottom.mp4'; o = 'portrait'; rw = 256; rh = 512; }
+            else if (autotest === 'top') { sample = '/Samples/alpha_top_bottom.mp4'; rw = 256; rh = 512; }
             else {
                 var parts = decodeURIComponent(autotest).split('|');
                 sample = parts[0];
                 var d = (parts[1] || '0x0').split('x');
                 rw = parseInt(d[0]) || 0; rh = parseInt(d[1]) || 0;
-                o = parts[2] || 'landscape';
             }
+            if (sample.charAt(0) !== '/') sample = '/' + sample;   // 相对路径会落到 /Resources/ 下，404
             fetch(sample).then(function(r){ return r.arrayBuffer(); }).then(function(ab){
                 var u8 = new Uint8Array(ab), bin = '';
                 for (var i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
-                loadFile({
-                    playerSrc: '/Resources/Web/alpha-video-player-js.js',
-                    orientation: o, side: 'back',
-                    rawWidth: rw, rawHeight: rh,
-                    base64: btoa(bin)
-                });
+                loadFile({ rawWidth: rw, rawHeight: rh, base64: btoa(bin) });
             });
+
+            // 逐区域原始统计：用来校准判据（哪些块像遮罩、哪些块是画面、内容包围盒在哪）
+            window.__alphaDebug = async function (time) {
+                srcVideo.pause();
+                var f = null;
+                if (typeof time === 'number') f = await seekAndSample(time);
+                else { try { srcVideo.currentTime = 0; } catch (e) { } f = await seekAndSample(0); }
+                if (!f) return null;
+                var base = {
+                    'L': [0, 0, 0.5, 1], 'R': [0.5, 0, 0.5, 1],
+                    'T': [0, 0, 1, 0.5], 'B': [0, 0.5, 1, 0.5],
+                    'LT': [0, 0, 0.25, 0.5], 'LB': [0, 0.5, 0.25, 0.5], 'RT': [0.5, 0, 0.25, 0.5], 'RB': [0.5, 0.5, 0.25, 0.5],
+                    'TL': [0, 0, 0.5, 0.25], 'TR': [0.5, 0, 0.5, 0.25], 'BL': [0, 0.5, 0.5, 0.25], 'BR': [0.5, 0.5, 0.5, 0.25],
+                    'Q1': [0, 0, 0.5, 0.5], 'Q2': [0.5, 0, 0.5, 0.5], 'Q3': [0, 0.5, 0.5, 0.5], 'Q4': [0.5, 0.5, 0.5, 0.5]
+                };
+                var o = {};
+                Object.keys(base).forEach(function (k) {
+                    var m = measure(f.data, base[k], f.w, f.h);
+                    if (!m) { o[k] = null; return; }
+                    o[k] = {
+                        g: +m.grayRatio.toFixed(2), ch: Math.round(m.chroma), sp: Math.round(m.spread),
+                        v: Math.round(m.variance), lm: Math.round((m.satMax) / 17),
+                        bb: m.bbox ? m.bbox.map(function (x) { return +x.toFixed(3); }) : null
+                    };
+                });
+                return { frame: vw + 'x' + vh, t: srcVideo.currentTime, s: o };
+            };
+
+            // 自动化测试读口：合成结果的透明度分布 + 当前判定的拼接方案
+            window.__alphaTest = function () {
+                var rep = {
+                    mode: viewMode, note: autoNote, cands: candidates.length,
+                    frame: vw + 'x' + vh,
+                    pack: current ? current.pack : null,
+                    main: current ? current.main : null,
+                    mask: current ? current.maskHalf + (current.quad ? '/' + current.quad : '') : null,
+                    quad: current ? current.quad : null,
+                    out: current && current.outRect ? current.outRect.join(',') : null,
+                    srcRgb: current && current.srcRgb, srcAlpha: current && current.srcAlpha,
+                    table: lastScores
+                };
+                if (compositor && compositor.readback) {
+                    var rb = compositor.readback();
+                    if (rb) {
+                        var n = rb.w * rb.h, tr = 0, op = 0, luma = 0, lc = 0;
+                        for (var i = 0; i < n; i++) {
+                            var a = rb.data[i * 4 + 3];
+                            if (a < 8) tr++;
+                            else if (a > 200) op++;
+                            if (a > 8) { luma += (rb.data[i*4] + rb.data[i*4+1] + rb.data[i*4+2]) / 3; lc++; }
+                        }
+                        rep.canvas = rb.w + 'x' + rb.h;
+                        rep.transparent = +(tr / n).toFixed(3);
+                        rep.opaque = +(op / n).toFixed(3);
+                        rep.meanLuma = lc ? Math.round(luma / lc) : 0;
+                    }
+                }
+                return rep;
+            };
         }
 
         log('Page ready');
