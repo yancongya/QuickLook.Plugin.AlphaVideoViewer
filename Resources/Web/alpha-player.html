@@ -57,6 +57,8 @@
             overflow: hidden;
         }
         #canvasWrap video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+        /* 库把 canvas 内联定位在 top:0/left:0；补 right/bottom + margin:auto 使其居中 */
+        #canvasWrap canvas { right: 0; bottom: 0; margin: auto; }
 
         /* Zoom level indicator */
         #zoomInfo {
@@ -719,7 +721,8 @@
                     onInitSuccess: function() { log('player init'); },
                     onInitError: function(e) { fail('WebGL init failed'); },
                     onCanPlay: function() {
-                        videoEl = stage.querySelector('video');
+                        // 库把 video 挂在 document.body 而非 container，两处都兜一下
+                        videoEl = stage.querySelector('video') || document.querySelector('video');
                         if (videoEl) {
                             duration = videoEl.duration || 0;
                             videoEl.volume = volume;
@@ -762,6 +765,23 @@
             if (!msg || typeof msg !== 'object') return;
             if (msg.type === 'loadFile') loadFile(msg);
         });
+
+        // --- Self-test: ?autotest=side|top 时用仓库内 Samples 直接起播（WebView2 正常路径不走这里）---
+        var autotest = new URLSearchParams(location.search).get('autotest');
+        if (autotest) {
+            var sample = autotest === 'top' ? '/Samples/alpha_top_bottom.mp4' : '/Samples/alpha_side_by_side.mp4';
+            var raw = autotest === 'top' ? {o:'portrait', w:256, h:512} : {o:'landscape', w:512, h:256};
+            fetch(sample).then(function(r){ return r.arrayBuffer(); }).then(function(ab){
+                var u8 = new Uint8Array(ab), bin = '';
+                for (var i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+                loadFile({
+                    playerSrc: '/Resources/Web/alpha-video-player-js.js',
+                    orientation: raw.o, side: 'back',
+                    rawWidth: raw.w, rawHeight: raw.h,
+                    base64: btoa(bin)
+                });
+            });
+        }
 
         log('Page ready');
         if (window.chrome && window.chrome.webview)
