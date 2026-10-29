@@ -766,18 +766,26 @@
             if (msg.type === 'loadFile') loadFile(msg);
         });
 
-        // --- Self-test: ?autotest=side|top 时用仓库内 Samples 直接起播（WebView2 正常路径不走这里）---
+        // --- Self-test: ?autotest=side|top 或 ?autotest=<url-encoded 路径>|WxH|landscape|portrait（单参数避免 & 被 shell 吃掉）---
         var autotest = new URLSearchParams(location.search).get('autotest');
         if (autotest) {
-            var sample = autotest === 'top' ? '/Samples/alpha_top_bottom.mp4' : '/Samples/alpha_side_by_side.mp4';
-            var raw = autotest === 'top' ? {o:'portrait', w:256, h:512} : {o:'landscape', w:512, h:256};
+            var sample, o = 'landscape', rw = 0, rh = 0;
+            if (autotest === 'side') { sample = '/Samples/alpha_side_by_side.mp4'; rw = 512; rh = 256; }
+            else if (autotest === 'top') { sample = '/Samples/alpha_top_bottom.mp4'; o = 'portrait'; rw = 256; rh = 512; }
+            else {
+                var parts = decodeURIComponent(autotest).split('|');
+                sample = parts[0];
+                var d = (parts[1] || '0x0').split('x');
+                rw = parseInt(d[0]) || 0; rh = parseInt(d[1]) || 0;
+                o = parts[2] || 'landscape';
+            }
             fetch(sample).then(function(r){ return r.arrayBuffer(); }).then(function(ab){
                 var u8 = new Uint8Array(ab), bin = '';
                 for (var i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
                 loadFile({
                     playerSrc: '/Resources/Web/alpha-video-player-js.js',
-                    orientation: raw.o, side: 'back',
-                    rawWidth: raw.w, rawHeight: raw.h,
+                    orientation: o, side: 'back',
+                    rawWidth: rw, rawHeight: rh,
                     base64: btoa(bin)
                 });
             });
