@@ -1228,18 +1228,13 @@
             if (msg.type === 'loadFile') loadFile(msg);
         });
 
-        // --- Self-test: ?autotest=side|top 或 ?autotest=<url-encoded 路径>|WxH（单参数避免 & 被 shell 吃掉）---
+        // --- Self-test: ?autotest=<url-encoded 路径>[|WxH]（浏览器 harness 用；插件运行不依赖）---
         var autotest = new URLSearchParams(location.search).get('autotest');
         if (autotest) {
-            var sample, rw = 0, rh = 0;
-            if (autotest === 'side') { sample = '/Samples/alpha_side_by_side.mp4'; rw = 512; rh = 256; }
-            else if (autotest === 'top') { sample = '/Samples/alpha_top_bottom.mp4'; rw = 256; rh = 512; }
-            else {
-                var parts = decodeURIComponent(autotest).split('|');
-                sample = parts[0];
-                var d = (parts[1] || '0x0').split('x');
-                rw = parseInt(d[0]) || 0; rh = parseInt(d[1]) || 0;
-            }
+            var parts = decodeURIComponent(autotest).split('|');
+            var sample = parts[0], rw = 0, rh = 0;
+            var d = (parts[1] || '0x0').split('x');
+            rw = parseInt(d[0]) || 0; rh = parseInt(d[1]) || 0;
             if (sample.charAt(0) !== '/') sample = '/' + sample;   // 相对路径会落到 /Resources/ 下，404
             fetch(sample).then(function(r){ return r.arrayBuffer(); }).then(function(ab){
                 var u8 = new Uint8Array(ab), bin = '';
