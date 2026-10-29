@@ -8,16 +8,26 @@
 
 ### 简介
 
-一个用于预览 **Alpha/RGB 拼接透明视频**（`.mp4` / `.mov` / `.m4v`）的 [QuickLook](https://github.com/QL-Win/QuickLook) 插件。
+面向**直播领域**的透明视频预览插件，适配市面主流的直播礼物/特效透明视频方案：**字节 AlphaPlayer**、**腾讯 VAP**、**YYEVA** 等 Alpha/RGB 拼接素材（`.mp4` / `.mov` / `.m4v`）。
 
-很多动效素材（字节系特效、直播贴纸、H5 模板等）会把 Alpha 遮罩和 RGB 画面拼接在同一个视频里（左右或上下各占一半，腾讯 VAP 还会把遮罩降采样塞进某个象限）。这类文件用普通播放器预览会出现"半边黑白遮罩"，本插件将其合成为真正的透明画面预览。
+直播礼物、开屏特效、互动玩法里的动画，大多把 Alpha 遮罩和 RGB 画面打包在同一个视频里——左右或上下半幅拼接（AlphaPlayer），或遮罩降采样塞进象限（腾讯 VAP）。这类文件用普通播放器预览会露出"半边黑白遮罩"。本插件用**自研的渲染与识别方法**将其合成为真正的透明画面。
+
+### 适配方案
+
+| 方案 | 识别方式 | 说明 |
+|------|---------|------|
+| 腾讯 VAP v2 | `vapc` 元数据盒直读 | 官方写在文件里的对位坐标（`rgbFrame` / `aFrame`），解析后直送合成器，像素级对位、零猜测 |
+| 字节 AlphaPlayer | 逐帧像素自检 | 左右/上下半幅拼接，解几帧按「遮罩纯灰 × 画面彩色 × 包围盒对齐」评分确认 |
+| 腾讯 VAP 压平素材 / v1 | 逐帧像素自检 | 无 `vapc` 盒的 VAP 素材，含象限遮罩候选网格 |
+| YYEVA（快手） | 逐帧像素自检 | 拼接类素材可识别；纯视频自动交回内置播放器。不解析 YYEVA 元数据 |
+| 普通 MP4/MOV/M4V | — | 自检确认两半皆彩色后交回内置 VideoViewer，绝不抢普通视频（宁漏勿抢） |
 
 ### 功能特性
 
-- 两级自动识别：MP4 `tkhd` 尺寸做几何初筛，再用 Media Foundation 真解几帧像素自检确认拼接特征（左右 / 上下半幅、VAP 象限遮罩都支持）；普通 MP4/MOV/M4V 一旦确认为两半皆彩色，直接交回内置 VideoViewer（宁漏勿抢）
-- 判据是「遮罩有多纯灰 × 画面有多彩 × 两块包围盒是否对齐」，纯色/降采样遮罩都能命中；合成结果几乎全透明时自动退回普通预览，不会显示一片空白
+- **自研识别 = 元数据优先 + 像素自检兜底**：`vapc` 命中即定案、跳过一切猜测；无元数据的拼接素材走 Media Foundation 解码像素自检；普通视频自动放行
+- **自研渲染 = 自写极简 WebGL 合成器**：单帧纹理取两个任意源矩形，`rgb × alpha` 预乘输出，可原生表达主区与遮罩不同长宽比的 VAP 素材（主流库假设两块同长宽比，做不到）
+- 像素判据是「遮罩有多纯灰 × 画面有多彩 × 两块包围盒是否对齐」，纯色/降采样遮罩都能命中；合成结果几乎全透明时自动退回普通预览，不会显示一片空白
 - 工具栏一键在候选方案间翻转（含切回不处理的原始视频预览），带遮罩区域可视化
-- 自写极简 WebGL 合成器（单帧纹理取两个源矩形，`rgb × alpha` 预乘输出），可原生表达主区与遮罩不同长宽比的 VAP 素材
 - 棋盘格 / 白色 / 黑色 / 自定义背景，循环、进度条拖拽、缩放平移、音量
 - 自动隐藏控制栏，适配 QuickLook 暗色/亮色主题
 - 中英双语支持
@@ -65,7 +75,7 @@ powershell -ExecutionPolicy Bypass -File Scripts/build.ps1
 
 ```
 ├── Plugin.cs                          # IViewer 入口（Priority 100）
-├── Probing/Mp4Probe.cs                # MP4 tkhd 尺寸 + mvhd 时长 + 拼接布局几何初筛
+├── Probing/Mp4Probe.cs                # 顶层 vapc 元数据盒直读 + MP4 tkhd 尺寸 + mvhd 时长 + 几何初筛
 ├── Probing/FrameProbe.cs              # Media Foundation 解码像素自检（普通视频交回原生）
 ├── AlphaVideoViewerPanel.xaml(.cs)    # WebView2 播放面板
 ├── Resources/Web/
@@ -102,16 +112,26 @@ powershell -ExecutionPolicy Bypass -File Scripts/build.ps1
 
 ### Introduction
 
-A [QuickLook](https://github.com/QL-Win/QuickLook) plugin for previewing **alpha/RGB split transparent videos** (`.mp4` / `.mov` / `.m4v`).
+A [QuickLook](https://github.com/QL-Win/QuickLook) plugin for previewing **live-stream gift/effect transparent videos** — the alpha/RGB-split assets used across the live industry: **ByteDance AlphaPlayer**, **Tencent VAP** and **YYEVA** (`.mp4` / `.mov` / `.m4v`).
 
-Motion-design assets (ByteDance-style effects, live-stream stickers, H5 templates) often pack the alpha mask and RGB frame into one video — side-by-side or top-bottom, and in Tencent VAP the mask is downsampled into an adjacent quadrant. Ordinary players show half of it as a black/white mask; this plugin composites them into a true transparent preview.
+Gift animations, splash effects and interactive stickers in live streaming usually pack the alpha mask and the RGB frame into one video — side-by-side or top-bottom halves (AlphaPlayer), or a downsampled mask in an adjacent quadrant (Tencent VAP). Ordinary players show half of it as a black/white mask; this plugin composites them into a true transparent preview using **self-written rendering and detection methods**.
+
+### Supported formats
+
+| Scheme | Detection | Notes |
+|--------|-----------|-------|
+| Tencent VAP v2 | `vapc` metadata box, direct read | Official alignment coordinates (`rgbFrame` / `aFrame`) written in the file; fed straight to the compositor — pixel-perfect, zero guessing |
+| ByteDance AlphaPlayer | Per-frame pixel self-check | Side-by-side / top-bottom halves, confirmed by sampling decoded frames ("mask greyness × frame colourfulness × bounding-box alignment") |
+| Flattened VAP / VAP v1 | Per-frame pixel self-check | VAP assets without a `vapc` box, including quadrant-mask candidate grids |
+| YYEVA (Kuaishou) | Per-frame pixel self-check | Split assets are recognised; plain videos fall back to the built-in player. YYEVA metadata is not parsed |
+| Ordinary MP4/MOV/M4V | — | Once both halves decode as colourful the file is handed back to the built-in VideoViewer — never grabs an unconfirmed match |
 
 ### Features
 
-- Two-stage auto-detection: MP4 `tkhd` geometry pre-filter, then a Media Foundation decode pass samples real pixels to confirm the split (side-by-side / top-bottom halves, Tencent VAP quadrant masks all supported); ordinary MP4/MOV/M4V whose decoded halves are both colourful is handed straight back to the built-in VideoViewer (never grabs an unconfirmed match)
+- **Self-written detection = metadata first, pixel self-check as fallback**: a valid `vapc` box settles alignment immediately; flattened split assets go through a Media Foundation decode pass; ordinary videos are released to the built-in player
+- **Self-written rendering = a minimal WebGL compositor**: two arbitrary source rects from one frame texture, premultiplied `rgb × alpha`, natively expressing VAP assets whose main and mask have different aspect ratios (mainstream libraries assume equal aspects and cannot)
 - Scored by "how grey the mask is × how colourful the frame is × how the two bounding boxes align"; solid or downsampled masks both match, and an essentially-empty composite falls back to plain video instead of showing nothing
 - Toolbar button cycles candidates (including a return to the untouched video preview) with mask-region visualisation
-- Self-written minimal WebGL compositor (two source rects from one frame texture, premultiplied `rgb × alpha`) so main and mask can have different aspect ratios
 - Checkerboard / white / black / custom background, loop, seek, zoom & pan, volume
 - Auto-hide control bar, QuickLook dark/light theme, bilingual UI
 
@@ -167,6 +187,12 @@ In a browser, `?autotest=<url-encoded path>[|WxH]` loads a sample straight into 
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md)
+
+## Credits
+
+- [QuickLook](https://github.com/QL-Win/QuickLook) by QL-Win
+- UI design references official QuickLook plugins (VideoViewer, ImageViewer)
+- Sample files come from the official AlphaPlayer / Tencent VAP / YYEVA repositories — sources and licences listed in [Samples/SOURCES.md](Samples/SOURCES.md)
 
 ## License
 

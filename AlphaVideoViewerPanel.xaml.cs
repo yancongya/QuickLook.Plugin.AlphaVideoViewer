@@ -25,6 +25,12 @@ namespace QuickLook.Plugin.AlphaVideoViewer
         private double _rawWidth;
         private double _rawHeight;
 
+        // vapc 元数据（腾讯 VAP v2 官方对位坐标，已归一化）；非 null 时前端跳过像素检测直接合成
+        private double[] _vapRgbRect;
+        private double[] _vapAlphaRect;
+        private double _vapOutW;
+        private double _vapOutH;
+
         [DllImport("user32.dll")]
         private static extern bool ReleaseCapture();
 
@@ -69,6 +75,14 @@ namespace QuickLook.Plugin.AlphaVideoViewer
             // 这里只透传探测到的帧尺寸供信息面板展示。
             _rawWidth = width;
             _rawHeight = height;
+        }
+
+        public void SetVapRects(double[] rgbRect, double[] alphaRect, double outW, double outH)
+        {
+            _vapRgbRect = rgbRect;
+            _vapAlphaRect = alphaRect;
+            _vapOutW = outW;
+            _vapOutH = outH;
         }
 
         private static bool IsWebView2Available()
@@ -245,6 +259,16 @@ namespace QuickLook.Plugin.AlphaVideoViewer
                     type = "loadFile",
                     rawWidth = _rawWidth,
                     rawHeight = _rawHeight,
+                    // vapc 元数据（归一化矩形 + 输出尺寸）；无 vapc 时为 null，前端走像素自检
+                    vapc = _vapRgbRect != null && _vapAlphaRect != null
+                        ? (object)new
+                        {
+                            rgb = _vapRgbRect,
+                            alpha = _vapAlphaRect,
+                            outW = _vapOutW,
+                            outH = _vapOutH
+                        }
+                        : null,
                     base64 = base64
                 };
 

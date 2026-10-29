@@ -131,6 +131,27 @@
         }
         .swatch:hover { border-color: var(--fg); }
 
+        /* Mode dropdown (auto / alpha / video) */
+        #modeMenu {
+            position: absolute; top: 36px; right: 8px;
+            min-width: 128px;
+            background: var(--control-bg);
+            padding: 4px 0; border-radius: 4px;
+            display: none; z-index: 21;
+        }
+        #modeMenu.show { display: block; }
+        #modeMenu .mode-item {
+            display: flex; align-items: center;
+            padding: 6px 10px; cursor: pointer;
+            color: var(--fg); font-size: 12px; white-space: nowrap;
+        }
+        #modeMenu .mode-item:hover { background: rgba(255,255,255,0.1); }
+        #modeMenu .mode-item .mi-check {
+            margin-left: auto; padding-left: 12px;
+            font-size: 12px; visibility: hidden;
+        }
+        #modeMenu .mode-item.checked .mi-check { visibility: visible; }
+
         /* Control bar */
         #controls {
             position: absolute; bottom: 0; left: 0; right: 0;
@@ -260,11 +281,16 @@
                 <span class="icon">&#xE8AB;</span>
             </button>
             <button class="btn" id="btnMode" title="预览模式">
-                <span class="icon">&#xE786;</span>
+                <span class="icon">&#xE70D;</span>
             </button>
             <button class="btn" id="btnBg" title="切换背景">
                 <span class="icon">&#xEF1F;</span>
             </button>
+        </div>
+        <div id="modeMenu">
+            <div class="mode-item" data-mode="auto"><span class="mi-label">自动</span><span class="mi-check">&#xE73E;</span></div>
+            <div class="mode-item" data-mode="alpha"><span class="mi-label">透明合成</span><span class="mi-check">&#xE73E;</span></div>
+            <div class="mode-item" data-mode="video"><span class="mi-label">普通视频</span><span class="mi-check">&#xE73E;</span></div>
         </div>
         <div id="metaPanel"></div>
         <div id="colorPicker">
@@ -329,11 +355,12 @@
             'META_Confidence': {zh:'自检',en:'Self-check'},
             'MODE_Alpha': {zh:'透明合成',en:'Alpha'},
             'MODE_Video': {zh:'普通视频',en:'Plain video'},
-            'MODE_Tip_Alpha': {zh:'当前：透明合成预览（点击切到普通视频）',en:'Alpha compositing (click for plain video)'},
-            'MODE_Tip_Video': {zh:'当前：普通视频预览，不合成透明（点击切回透明合成）',en:'Plain video (click for alpha compositing)'},
+            'MODE_Auto': {zh:'自动',en:'Auto'},
             'PACK_Half': {zh:'半幅拼接',en:'Half'},
             'PACK_Vap': {zh:'四分幅拼接',en:'Quarter mask'},
+            'PACK_Vapc': {zh:'VAP 元数据',en:'VAP metadata'},
             'AUTO_Confirmed': {zh:'已确认拼接',en:'split confirmed'},
+            'AUTO_Metadata': {zh:'vapc 元数据（官方对位）',en:'vapc metadata (official)'},
             'AUTO_NotSplit': {zh:'不像拼接素材，已切普通视频',en:'not a split asset, plain video'},
             'AUTO_Failed': {zh:'未能判定，保持当前',en:'inconclusive'},
             'AUTO_Skipped': {zh:'未判定（手动指定）',en:'not checked'},
@@ -361,6 +388,9 @@
         var btnMeta = document.getElementById('btnMeta');
         var btnFlip = document.getElementById('btnFlip');
         var btnMode = document.getElementById('btnMode');
+        var modeMenu = document.getElementById('modeMenu');
+        var modeMenuOpen = false;
+        var MODE_KEYS = ['MODE_Auto', 'MODE_Alpha', 'MODE_Video'];
         var metaPanel = document.getElementById('metaPanel');
         var colorPicker = document.getElementById('colorPicker');
         var customColor = document.getElementById('customColor');
@@ -385,6 +415,8 @@
         var viewMode = 'auto', autoChecked = false, autoNote = '';
         // 当前生效的拼接方案
         var candidates = [], current = null, lastScores = null;
+        // 宿主下发的 vapc 元数据（腾讯 VAP 官方对位坐标，已归一化）；非 null 时跳过像素自检
+        var hostVapc = null;
 
         window.applyI18n = function() {
             lang = window.__lang || lang;
@@ -395,6 +427,9 @@
             btnMeta.title = T('BTN_Meta');
             btnFlip.title = T('BTN_Flip');
             btnMode.title = T('BTN_Mode');
+            var mi = modeMenu.querySelectorAll('.mode-item');
+            for (var i = 0; i < mi.length; i++)
+                mi[i].querySelector('.mi-label').textContent = T(MODE_KEYS[i]);
             btnBg.title = T('BTN_Background');
             document.querySelector('.swatch[data-bg="default"]').title = T('BG_Default');
             document.querySelector('.swatch[data-bg="checker"]').title = T('BG_Checker');
@@ -497,17 +532,19 @@
         }
 
         function packLabel(c) {
-            return c ? (c.pack === 'half' ? T('PACK_Half') : T('PACK_Vap')) : '-';
+            if (!c) return '-';
+            if (c.pack === 'vapc') return T('PACK_Vapc');
+            return c.pack === 'half' ? T('PACK_Half') : T('PACK_Vap');
         }
         function sideLabel(c) {
-            if (!c) return '-';
+            if (!c || c.pack === 'vapc') return '-';   // vapc 对位由元数据决定，无「Alpha 在哪半区」概念
             var base = T(HALF_LABEL[c.maskHalf]);
             if (c.pack === 'half' || !c.quad) return base;
             var q = QUAD_LABEL[c.quad];
             return base + (lang === 'zh' ? '·' + q[0] : ' · ' + q[1]);
         }
         function splitLabel(c) {
-            if (!c) return '-';
+            if (!c || !c.split) return '-';
             return c.split === 'lr' ? T('SIDE_Left') + '/' + T('SIDE_Right')
                                     : T('SIDE_Top') + '/' + T('SIDE_Bottom');
         }
@@ -518,7 +555,10 @@
             return current.outRect[0] + '\u00d7' + current.outRect[1];
         }
         function displaySize() { return visibleSize(); }
-        function modeLabel() { return viewMode === 'video' ? T('MODE_Video') : T('MODE_Alpha'); }
+        function modeLabel() {
+            return viewMode === 'auto' ? T('MODE_Auto')
+                 : viewMode === 'video' ? T('MODE_Video') : T('MODE_Alpha');
+        }
         function updateMetaPanel() {
             var dur = duration ? duration.toFixed(2) + 's' : '-';
             metaPanel.innerHTML =
@@ -655,6 +695,13 @@
 
         // 逻辑矩形映射回两块源矩形；输出尺寸按主区（分辨率更高的一块）算
         function rectsFromLogical(cand, lg) {
+            // vapc 元数据已是精确的归一化矩形，原样直通；输出尺寸用 info.w/h（可能含裁剪）
+            if (cand.pack === 'vapc') {
+                return {
+                    rgb: cand.rgb, alpha: cand.alpha,
+                    out: { w: cand.outW, h: cand.outH }
+                };
+            }
             var a = cand.alpha, c = cand.rgb;
             if (!lg) lg = [0, 0, 1, 1];
             return {
@@ -842,6 +889,31 @@
             else { viewMode = 'alpha'; setActive(true); updateModeBtn(); }
         }
 
+        // vapc 元数据路径（腾讯 VAP v2 官方对位坐标）：不做像素自检，精确矩形直通合成器。
+        // flip 按钮在 candidates 里只会循环回自身（元数据唯一解），logicalFor 因 _lg 预置也不会触发测量。
+        async function applyHostVapc() {
+            var cand = {
+                pack: 'vapc', split: null, main: null, maskHalf: null, quad: null,
+                rgb: hostVapc.rgb, alpha: hostVapc.alpha,
+                outW: Math.round(hostVapc.outW || 0),
+                outH: Math.round(hostVapc.outH || 0),
+                weight: 2, _lg: [0, 0, 1, 1]
+            };
+            if (!(cand.outW > 0) || !(cand.outH > 0)) {
+                // 元数据缺输出尺寸时按画面矩形算（info.w/h 定义上等于 rgbFrame 尺寸）
+                cand.outW = Math.max(2, Math.round(cand.rgb[2] * vw));
+                cand.outH = Math.max(2, Math.round(cand.rgb[3] * vh));
+            }
+            candidates = [cand];
+            autoChecked = true;
+            autoNote = T('AUTO_Metadata');
+            await applyPacking(cand, cand._lg);
+            log('vapc metadata: rgb=[' + cand.rgb.join(',') + '] alpha=[' + cand.alpha.join(',') +
+                '] out=' + cand.outW + 'x' + cand.outH);
+            updateInfo();
+            if (metaPinned) updateMetaPanel();
+        }
+
         function setActive(on) {
             if (compositor && compositor.setActive) compositor.setActive(on);
         }
@@ -877,13 +949,52 @@
         }
 
         function updateModeBtn() {
-            btnMode.classList.toggle('active', viewMode === 'video');
-            btnMode.title = viewMode === 'video' ? T('MODE_Tip_Video') : T('MODE_Tip_Alpha');
+            btnMode.classList.toggle('active', modeMenuOpen || viewMode === 'video');
+            var items = modeMenu.querySelectorAll('.mode-item');
+            for (var i = 0; i < items.length; i++)
+                items[i].classList.toggle('checked', items[i].getAttribute('data-mode') === viewMode);
         }
 
-        btnMode.addEventListener('click', function() {
-            if (viewMode === 'video') enterAlphaMode();
-            else enterVideoMode();
+        function setModeMenu(open) {
+            modeMenuOpen = open;
+            modeMenu.classList.toggle('show', open);
+            updateModeBtn();
+        }
+
+        // 模式选择统一入口：auto 重跑像素自检重新决策；alpha / video 为手动锁定
+        async function setViewMode(mode) {
+            if (mode === 'auto') {
+                viewMode = 'auto';
+                autoChecked = false;
+                autoNote = '';
+                updateModeBtn();
+                updateInfo();
+                showToast(T('MODE_Auto'));
+                await runAutoDetect();
+                updateInfo();
+                if (metaPinned) updateMetaPanel();
+            } else if (mode === 'alpha') {
+                enterAlphaMode();
+            } else {
+                enterVideoMode();
+            }
+        }
+
+        // 模式下拉：点按钮展开/收起列表；点列表项选模式；点面板外任意处收起
+        btnMode.addEventListener('click', function(e) {
+            e.stopPropagation();
+            setModeMenu(!modeMenuOpen);
+        });
+        modeMenu.addEventListener('click', function(e) {
+            var item = e.target.closest('.mode-item');
+            if (!item) return;
+            setModeMenu(false);
+            var mode = item.getAttribute('data-mode');
+            if (mode !== viewMode) setViewMode(mode);
+        });
+        document.addEventListener('click', function(e) {
+            if (modeMenuOpen && !modeMenu.contains(e.target) && !btnMode.contains(e.target))
+                setModeMenu(false);
         });
 
         // --- 手动切换拼接方案：在当前几何允许的所有候选里循环 ---
@@ -961,6 +1072,7 @@
             infoEl.classList.remove('show');
             volumeLayer.classList.remove('show');
             colorPicker.classList.remove('show');
+            setModeMenu(false);
             metaPanel.classList.remove('show');
         }
         function resetHideTimer() {
@@ -1169,6 +1281,7 @@
 
                 rawW = msg.rawWidth || 0;
                 rawH = msg.rawHeight || 0;
+                hostVapc = msg.vapc || null;
                 viewMode = 'auto';
                 autoChecked = false;
                 autoNote = '';
@@ -1176,6 +1289,7 @@
                 candidates = [];
                 duration = 0;
                 stage.classList.remove('plain');
+                setModeMenu(false);
                 updateModeBtn();
 
                 if (compositor) { try { compositor.destroy(); } catch (e) { } compositor = null; }
@@ -1206,8 +1320,12 @@
                     window.chrome.webview.postMessage({type:'loaded'});
                 log('metadata ' + vw + 'x' + vh + ', ' + candidates.length + ' candidates');
 
-                await buildCompositor();
-                await runAutoDetect();
+                if (hostVapc && hostVapc.rgb && hostVapc.alpha) {
+                    await applyHostVapc();
+                } else {
+                    await buildCompositor();
+                    await runAutoDetect();
+                }
                 srcVideo.play().catch(function() { });
             } catch (err) {
                 fail(err.message || String(err));
@@ -1235,11 +1353,15 @@
             var sample = parts[0], rw = 0, rh = 0;
             var d = (parts[1] || '0x0').split('x');
             rw = parseInt(d[0]) || 0; rh = parseInt(d[1]) || 0;
+            // &vapc=<url-encoded JSON>：注入宿主 vapc 元数据，测试官方对位路径（模拟 C# 端下发）
+            var vapcParam = new URLSearchParams(location.search).get('vapc');
+            var vapcInjected = null;
+            if (vapcParam) { try { vapcInjected = JSON.parse(decodeURIComponent(vapcParam)); } catch (e) { } }
             if (sample.charAt(0) !== '/') sample = '/' + sample;   // 相对路径会落到 /Resources/ 下，404
             fetch(sample).then(function(r){ return r.arrayBuffer(); }).then(function(ab){
                 var u8 = new Uint8Array(ab), bin = '';
                 for (var i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
-                loadFile({ rawWidth: rw, rawHeight: rh, base64: btoa(bin) });
+                loadFile({ rawWidth: rw, rawHeight: rh, vapc: vapcInjected, base64: btoa(bin) });
             });
 
             // 逐区域原始统计：用来校准判据（哪些块像遮罩、哪些块是画面、内容包围盒在哪）

@@ -13,8 +13,10 @@ packages/
 *.suo
 
 # Cloned reference projects
-QuickLook/
+QuickLook.Plugin.LottieFilesViewer/
 QuickLook.Plugin.VideoViewer/
+QuickLook/
 
 # Plugin package
 *.qlplugin
+QuickLook.wiki/

@@ -6,7 +6,9 @@
     <AssemblyName>QuickLook.Plugin.AlphaVideoViewer</AssemblyName>
     <Platforms>AnyCPU;x64</Platforms>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
@@ -47,8 +49,7 @@
   <ItemGroup>
     <Compile Include="Plugin.cs" />
     <Compile Include="AlphaVideoViewerPanel.xaml.cs" />
-    <Compile Include="Probing\Mp4Probe.cs" />
-    <Compile Include="Probing\FrameProbe.cs" />
+    <Compile Include="Probing\*.cs" />
     <Compile Include="Properties\*.cs" />
     <Page Include="AlphaVideoViewerPanel.xaml">
       <SubType>Designer</SubType>
