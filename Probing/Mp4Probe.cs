@@ -19,10 +19,6 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
         public int Height;
         public AlphaLayout Layout = AlphaLayout.None;
         public DateTime CheckedAt;
-
-        public static readonly ProbeResult NotAlpha = new ProbeResult { Layout = AlphaLayout.None };
-
-        private static ProbeResult None() => new ProbeResult { Layout = AlphaLayout.None, CheckedAt = DateTime.Now };
     }
 
     /// <summary>
@@ -38,6 +34,10 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
         private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
         private static readonly ConcurrentDictionary<string, ProbeResult> Cache =
             new ConcurrentDictionary<string, ProbeResult>();
+
+        // 每次新建实例并盖时间戳：共享静态实例会让「非 Alpha」缓存永不过期、每次 CanHandle 重复解析
+        private static ProbeResult None() =>
+            new ProbeResult { Layout = AlphaLayout.None, CheckedAt = DateTime.Now };
 
         public static ProbeResult Probe(string path)
         {
