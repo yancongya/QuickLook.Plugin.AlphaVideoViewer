@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-29
+
 ### Added
 - Official VAP `vapc` metadata path: `Mp4Probe` scans top-level boxes for the Tencent VAP v2 `vapc` box and parses its JSON (`videoW/H`, `w/h`, `rgbFrame`, `aFrame`); when present the exact normalized rects go straight to the compositor (pixel-level alignment, no guessing) and `CanHandle` skips the decode self-check. Pixel detection remains the fallback for flattened assets without the box
 - WebView2 transparent preview with a self-written WebGL compositor (`alpha-compositor.js`): two source rects from one frame texture, premultiplied `rgb × alpha`
