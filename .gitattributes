@@ -1,0 +1,31 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# C# sources
+*.cs text diff=csharp
+*.xaml text
+*.csproj text
+*.sln text
+*.config text
+*.json text
+*.xml text
+
+# Web
+*.html text
+*.css text
+*.js text
+
+# Scripts
+*.ps1 text
+*.sh text
+
+# Binary
+*.dll binary
+*.wasm binary
+*.png binary
+*.jpg binary
+*.ico binary
+
+# Archives
+*.zip binary
+*.qlplugin binary

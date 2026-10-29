@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        :root {
+            --bg: #202020;
+            --fg: #cccccc;
+            --fg-alt: #888888;
+            --accent: #76b9ed;
+            --control-bg: rgba(30,30,30,0.92);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%; overflow: hidden;
+            background: var(--bg); font-family: 'Segoe UI', sans-serif;
+            user-select: none;
+        }
+        .icon { font-family: 'Segoe MDL2 Assets', 'Segoe Fluent Icons'; font-size: 14px; }
+
+        #container {
+            width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            position: relative;
+        }
+
+        /* Background layer */
+        #bgLayer { position: absolute; inset: 0; z-index: 0; }
+        #bgLayer.checker {
+            background-color: #ffffff;
+            background-image:
+                linear-gradient(45deg, #e0e0e0 25%, transparent 25%),
+                linear-gradient(-45deg, #e0e0e0 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #e0e0e0 75%),
+                linear-gradient(-45deg, transparent 75%, #e0e0e0 75%);
+            background-size: 16px 16px;
+            background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+        }
+        #bgLayer.checker.dark {
+            background-color: #2a2a2a;
+            background-image:
+                linear-gradient(45deg, #333 25%, transparent 25%),
+                linear-gradient(-45deg, #333 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #333 75%),
+                linear-gradient(-45deg, transparent 75%, #333 75%);
+        }
+        #bgLayer.white { background: #ffffff; }
+        #bgLayer.black { background: #000000; }
+        #bgLayer.default { background: var(--bg); }
+
+        /* Stage: alpha-video-player-js appends its video + canvas here */
+        #canvasWrap {
+            display: flex; align-items: center; justify-content: center;
+            width: 100%; height: 100%;
+            position: relative; z-index: 1;
+            transform-origin: center center;
+            overflow: hidden;
+        }
+        #canvasWrap video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+        /* Zoom level indicator */
+        #zoomInfo {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(80,80,80,0.9); color: #fff;
+            padding: 4px 14px; border-radius: 5px;
+            font-size: 18px; pointer-events: none;
+            opacity: 0; z-index: 20; transition: opacity 0.2s;
+        }
+
+        /* Top-right toolbar */
+        #topBar {
+            position: absolute; top: 8px; right: 8px;
+            display: flex; gap: 4px;
+            z-index: 20; opacity: 1; transition: opacity 0.3s;
+        }
+        #topBar.hidden { opacity: 0; pointer-events: none; }
+        #topBar .btn {
+            width: 24px; height: 24px;
+            background: transparent; border: none; color: var(--fg);
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            border-radius: 2px; transition: background 0.1s;
+        }
+        #topBar .btn:hover { background: rgba(255,255,255,0.1); }
+        #topBar .btn .icon { font-size: 12px; }
+
+        /* Metadata panel */
+        #metaPanel {
+            position: absolute; top: 36px; right: 8px;
+            background: var(--control-bg);
+            padding: 8px 12px; border-radius: 4px;
+            color: var(--fg); font-size: 11px;
+            line-height: 1.6; z-index: 21;
+            display: none; max-width: 280px;
+            max-height: 300px; overflow-y: auto;
+        }
+        #metaPanel.show { display: block; }
+        #metaPanel .label { color: var(--fg-alt); }
+        #metaPanel .meta-row { display: flex; justify-content: space-between; }
+        #metaPanel .meta-row .label { flex: 0 0 auto; }
+        #metaPanel .meta-row .value { text-align: right; }
+        #metaPanel::-webkit-scrollbar { width: 4px; }
+        #metaPanel::-webkit-scrollbar-track { background: transparent; }
+        #metaPanel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+        #metaPanel::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+        /* Color picker popup */
+        #colorPicker {
+            position: absolute; top: 36px; right: 8px;
+            background: var(--control-bg);
+            padding: 8px; border-radius: 4px;
+            display: none; z-index: 21;
+            flex-direction: column; gap: 6px;
+        }
+        #colorPicker.show { display: flex; }
+        #colorPicker input[type="color"] {
+            width: 100%; height: 28px; border: none;
+            cursor: pointer; background: transparent;
+        }
+        .colorSwatches { display: flex; gap: 4px; }
+        .swatch {
+            width: 20px; height: 20px; border: 1px solid rgba(255,255,255,0.2);
+            cursor: pointer; border-radius: 2px;
+        }
+        .swatch:hover { border-color: var(--fg); }
+
+        /* Control bar */
+        #controls {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            height: 32px; background: var(--control-bg);
+            display: flex; align-items: center; padding: 0 8px;
+            opacity: 1; transition: opacity 0.3s ease; z-index: 10;
+        }
+        #controls.hidden { opacity: 0; pointer-events: none; }
+
+        .btn {
+            background: transparent; border: none; color: var(--fg);
+            width: 32px; height: 32px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 4px; transition: all 0.15s; flex-shrink: 0;
+            position: relative;
+        }
+        .btn:hover { background: rgba(255,255,255,0.1); }
+        .btn:active { background: rgba(255,255,255,0.15); }
+        .btn.active { color: var(--accent); }
+        .btn.pinned {
+            background: rgba(118,185,237,0.3);
+            color: var(--accent);
+            box-shadow: inset 0 -2px 0 var(--accent);
+        }
+
+        /* Progress bar */
+        #progressWrap {
+            flex: 1; height: 10px; margin: 0 6px;
+            position: relative; cursor: pointer;
+            display: flex; align-items: center;
+        }
+        #progressBg {
+            position: absolute; left: 10px; right: 10px;
+            height: 1px; background: rgba(255,255,255,0.2);
+            top: 50%; transform: translateY(-50%);
+        }
+        #progressFill {
+            position: absolute; left: 10px; width: 0;
+            height: 1px; background: var(--fg);
+            top: 50%; transform: translateY(-50%);
+        }
+        #progressThumb {
+            position: absolute; left: 10px;
+            width: 10px; height: 10px;
+            border: 1px solid var(--fg); border-radius: 50%;
+            background: transparent;
+            top: 50%; transform: translate(-50%, -50%);
+            opacity: 0; transition: opacity 0.15s, background 0.15s; z-index: 2;
+        }
+        #progressWrap:hover #progressThumb { opacity: 1; }
+        #progressWrap.dragging #progressThumb { opacity: 1; background: var(--fg); }
+        #progressWrap:hover #progressFill { height: 2px; }
+        #progressWrap:hover #progressBg { height: 2px; }
+
+        #time {
+            color: var(--fg); font-size: 11px;
+            font-family: 'Segoe UI', sans-serif;
+            min-width: 90px; text-align: center;
+            flex-shrink: 0; white-space: nowrap;
+        }
+
+        /* Volume slider */
+        #volumeLayer {
+            position: absolute; bottom: 32px; right: 8px;
+            width: 130px; height: 32px;
+            background: var(--control-bg);
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.15s; z-index: 11;
+        }
+        #volumeLayer.show { opacity: 1; pointer-events: auto; }
+        #volumeSlider {
+            width: 110px; height: 4px;
+            -webkit-appearance: none; appearance: none;
+            background: rgba(255,255,255,0.2); outline: none;
+            border-radius: 2px; cursor: pointer;
+        }
+        #volumeSlider::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 10px; height: 10px;
+            background: var(--fg); border-radius: 50%; cursor: pointer;
+        }
+
+        #status {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--fg-alt); font-size: 13px; z-index: 2;
+        }
+
+        #info {
+            position: absolute; top: 8px; left: 8px;
+            color: var(--fg-alt); font-size: 11px;
+            font-family: 'Segoe UI', sans-serif;
+            pointer-events: none; opacity: 0;
+            transition: opacity 0.3s; z-index: 2;
+            line-height: 1.4;
+        }
+        #info.show { opacity: 1; }
+
+        /* Toast notification */
+        #toast {
+            position: absolute; bottom: 44px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(80,80,80,0.95); color: #fff;
+            padding: 6px 16px; border-radius: 4px;
+            font-size: 12px; pointer-events: none;
+            opacity: 0; z-index: 30; transition: opacity 0.3s;
+        }
+        #toast.show { opacity: 1; }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="bgLayer" class="default"></div>
+        <div id="canvasWrap"></div>
+        <div id="zoomInfo"></div>
+        <div id="info"></div>
+        <div id="toast"></div>
+
+        <!-- Top-right toolbar -->
+        <div id="topBar">
+            <button class="btn" id="btnMeta" title="文件信息">
+                <span class="icon">&#xE946;</span>
+            </button>
+            <button class="btn" id="btnFlip" title="切换Alpha位置">
+                <span class="icon">&#xE8AB;</span>
+            </button>
+            <button class="btn" id="btnBg" title="切换背景">
+                <span class="icon">&#xEF1F;</span>
+            </button>
+        </div>
+        <div id="metaPanel"></div>
+        <div id="colorPicker">
+            <div class="colorSwatches">
+                <div class="swatch" data-bg="default" style="background:var(--bg)" title="默认"></div>
+                <div class="swatch" data-bg="checker" style="background:repeating-conic-gradient(#e0e0e0 0% 25%, #fff 0% 50%) 50%/8px 8px" title="棋盘格"></div>
+                <div class="swatch" data-bg="white" style="background:#fff" title="白色"></div>
+                <div class="swatch" data-bg="black" style="background:#000" title="黑色"></div>
+            </div>
+            <input type="color" id="customColor" value="#202020" title="自定义颜色">
+        </div>
+
+        <div id="controls">
+            <button class="btn" id="btnPlayPause" title="播放 / 暂停">
+                <span class="icon">&#xE768;</span>
+            </button>
+            <button class="btn active" id="btnLoop" title="循环">
+                <span class="icon">&#xE777;</span>
+            </button>
+            <div id="progressWrap">
+                <div id="progressBg"></div>
+                <div id="progressFill"></div>
+                <div id="progressThumb"></div>
+            </div>
+            <span id="time">00:00 / 00:00</span>
+            <button class="btn" id="btnMute" title="音量">
+                <span class="icon" id="volumeIcon">&#xE74F;</span>
+            </button>
+        </div>
+        <div id="volumeLayer">
+            <input type="range" id="volumeSlider" min="0" max="100" value="0" step="1">
+        </div>
+        <div id="status">加载中...</div>
+    </div>
+
+    <script>
+    (function() {
+        // --- i18n: read from C# Translations.config ---
+        var _defaultT = {
+            'BTN_PlayPause': {zh:'播放 / 暂停',en:'Play / Pause'},
+            'BTN_Loop': {zh:'循环',en:'Loop'},
+            'BTN_Volume': {zh:'音量',en:'Volume'},
+            'BTN_Meta': {zh:'文件信息',en:'Info'},
+            'BTN_Flip': {zh:'切换Alpha位置',en:'Flip alpha side'},
+            'BTN_Background': {zh:'切换背景',en:'Background'},
+            'BG_Default': {zh:'默认',en:'Default'},
+            'BG_Checker': {zh:'棋盘格',en:'Checkerboard'},
+            'BG_White': {zh:'白色',en:'White'},
+            'BG_Black': {zh:'黑色',en:'Black'},
+            'BG_Custom': {zh:'自定义颜色',en:'Custom color'},
+            'STATUS_Loading': {zh:'加载中...',en:'Loading...'},
+            'STATUS_Decoding': {zh:'解码中...',en:'Decoding...'},
+            'STATUS_Playing': {zh:'',en:''},
+            'STATUS_Error': {zh:'错误',en:'Error'},
+            'META_Display': {zh:'显示尺寸',en:'Display'},
+            'META_Source': {zh:'源视频',en:'Source'},
+            'META_Layout': {zh:'拼接方式',en:'Layout'},
+            'META_AlphaSide': {zh:'Alpha 位置',en:'Alpha side'},
+            'META_Duration': {zh:'时长',en:'Duration'},
+            'LAYOUT_SideBySide': {zh:'左右拼接',en:'Side by side'},
+            'LAYOUT_TopBottom': {zh:'上下拼接',en:'Top / bottom'},
+            'SIDE_Left': {zh:'左',en:'Left'},
+            'SIDE_Right': {zh:'右',en:'Right'},
+            'SIDE_Top': {zh:'上',en:'Top'},
+            'SIDE_Bottom': {zh:'下',en:'Bottom'},
+            'TOAST_Saved': {zh:'已保存',en:'Saved'},
+            'TOAST_Copied': {zh:'已复制',en:'Copied'}
+        };
+        var lang = (navigator.language || 'zh').startsWith('zh') ? 'zh' : 'en';
+        var _t = _defaultT;
+        function T(key) { var v = _t[key]; return v ? (v[lang] || v.zh || '') : key; }
+
+        var statusEl = document.getElementById('status');
+        var stage = document.getElementById('canvasWrap');
+        var bgLayer = document.getElementById('bgLayer');
+        var controls = document.getElementById('controls');
+        var topBar = document.getElementById('topBar');
+        var btnPlay = document.getElementById('btnPlayPause');
+        var btnLoop = document.getElementById('btnLoop');
+        var btnMute = document.getElementById('btnMute');
+        var btnBg = document.getElementById('btnBg');
+        var btnMeta = document.getElementById('btnMeta');
+        var btnFlip = document.getElementById('btnFlip');
+        var metaPanel = document.getElementById('metaPanel');
+        var colorPicker = document.getElementById('colorPicker');
+        var customColor = document.getElementById('customColor');
+        var volumeIcon = document.getElementById('volumeIcon');
+        var volumeLayer = document.getElementById('volumeLayer');
+        var volumeSlider = document.getElementById('volumeSlider');
+        var progressWrap = document.getElementById('progressWrap');
+        var progressFill = document.getElementById('progressFill');
+        var progressThumb = document.getElementById('progressThumb');
+        var timeEl = document.getElementById('time');
+        var infoEl = document.getElementById('info');
+        var toastEl = document.getElementById('toast');
+        var zoomInfoEl = document.getElementById('zoomInfo');
+
+        var player = null, blobUrl = null, videoEl = null;
+        var isPlaying = false, isLooping = true, isDragging = false;
+        var duration = 0;
+        var hideTimer = null;
+        var orientation = 'landscape', side = 'back';
+        var rawW = 0, rawH = 0;
+
+        window.applyI18n = function() {
+            lang = window.__lang || lang;
+            _t = Object.assign({}, _defaultT, window.__translations || {});
+            btnPlay.title = T('BTN_PlayPause');
+            btnLoop.title = T('BTN_Loop');
+            btnMute.title = T('BTN_Volume');
+            btnMeta.title = T('BTN_Meta');
+            btnFlip.title = T('BTN_Flip');
+            btnBg.title = T('BTN_Background');
+            document.querySelector('.swatch[data-bg="default"]').title = T('BG_Default');
+            document.querySelector('.swatch[data-bg="checker"]').title = T('BG_Checker');
+            document.querySelector('.swatch[data-bg="white"]').title = T('BG_White');
+            document.querySelector('.swatch[data-bg="black"]').title = T('BG_Black');
+            customColor.title = T('BG_Custom');
+            statusEl.textContent = T('STATUS_Loading');
+        };
+        applyI18n();
+
+        // 默认约定 Alpha 素材无声：初始静音
+        var volume = 0;
+        var isMuted = true;
+
+        var ICON_PLAY = '';
+        var ICON_PAUSE = '';
+        var ICON_LOOP_OFF = '';
+        var ICON_LOOP_ON = '';
+        var ICON_VOL3 = '';
+        var ICON_VOL2 = '';
+        var ICON_VOL1 = '';
+        var ICON_VOL0 = '';
+
+        // --- Toast ---
+        var toastTimer = null;
+        function showToast(msg) {
+            toastEl.textContent = msg;
+            toastEl.classList.add('show');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(function() { toastEl.classList.remove('show'); }, 1500);
+        }
+
+        // --- Meta panel ---
+        function displaySize() {
+            if (rawW <= 0 || rawH <= 0) return '-';
+            if (orientation === 'portrait') return Math.round(rawW) + '\u00d7' + Math.round(rawH / 2);
+            return Math.round(rawW / 2) + '\u00d7' + Math.round(rawH);
+        }
+        function alphaSideLabel() {
+            if (orientation === 'portrait') return side === 'back' ? T('SIDE_Top') : T('SIDE_Bottom');
+            return side === 'back' ? T('SIDE_Left') : T('SIDE_Right');
+        }
+        function updateMetaPanel() {
+            var dur = duration ? duration.toFixed(2) + 's' : '-';
+            metaPanel.innerHTML =
+                '<div class="meta-row"><span class="label">' + T('META_Display') + '</span><span class="value">' + displaySize() + '</span></div>' +
+                '<div class="meta-row"><span class="label">' + T('META_Source') + '</span><span class="value">' + Math.round(rawW) + '\u00d7' + Math.round(rawH) + '</span></div>' +
+                '<div class="meta-row"><span class="label">' + T('META_Layout') + '</span><span class="value">' + (orientation === 'portrait' ? T('LAYOUT_TopBottom') : T('LAYOUT_SideBySide')) + '</span></div>' +
+                '<div class="meta-row"><span class="label">' + T('META_AlphaSide') + '</span><span class="value">' + alphaSideLabel() + '</span></div>' +
+                '<div class="meta-row"><span class="label">' + T('META_Duration') + '</span><span class="value">' + dur + '</span></div>';
+        }
+
+        var metaPinned = false;
+        btnMeta.addEventListener('click', function(e) {
+            e.stopPropagation();
+            metaPinned = !metaPinned;
+            btnMeta.classList.toggle('pinned', metaPinned);
+            if (metaPinned) {
+                updateMetaPanel();
+                metaPanel.classList.add('show');
+            } else {
+                metaPanel.classList.remove('show');
+            }
+        });
+        btnMeta.addEventListener('mouseenter', function() {
+            if (!metaPinned) {
+                updateMetaPanel();
+                metaPanel.classList.add('show');
+            }
+        });
+        btnMeta.addEventListener('mouseleave', function() {
+            if (!metaPinned) metaPanel.classList.remove('show');
+        });
+
+        // --- Alpha side flip ---
+        btnFlip.addEventListener('click', function() {
+            if (!player) return;
+            side = side === 'back' ? 'front' : 'back';
+            player.updateConfig({ side: side });
+            showToast('Alpha: ' + alphaSideLabel());
+            updateInfo();
+            if (metaPinned) updateMetaPanel();
+        });
+
+        // --- Background switcher ---
+        var BG_MODES = ['default', 'checker', 'white', 'black'];
+        var bgIndex = parseInt(localStorage.getItem('alpha-bg-index') || '0');
+        var customBgColor = localStorage.getItem('alpha-bg-custom') || '#202020';
+
+        function applyBg() {
+            var mode = BG_MODES[bgIndex];
+            bgLayer.className = mode;
+            if (mode === 'checker') {
+                var bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+                if (bg === '#202020' || bg === '#1a1a1a') bgLayer.classList.add('dark');
+            }
+            bgLayer.style.background = (mode === 'default' || mode === 'checker') ? '' : mode;
+            customColor.value = customBgColor;
+            localStorage.setItem('alpha-bg-index', bgIndex);
+        }
+
+        function cycleBg() { bgIndex = (bgIndex + 1) % BG_MODES.length; applyBg(); }
+
+        document.querySelectorAll('.swatch').forEach(function(el) {
+            el.addEventListener('click', function() {
+                bgIndex = BG_MODES.indexOf(el.dataset.bg);
+                applyBg(); colorPicker.classList.remove('show');
+            });
+        });
+
+        customColor.addEventListener('input', function() {
+            customBgColor = customColor.value;
+            bgLayer.className = ''; bgLayer.style.background = customBgColor;
+            localStorage.setItem('alpha-bg-custom', customBgColor);
+            bgIndex = -1; localStorage.setItem('alpha-bg-index', '-1');
+        });
+
+        btnBg.addEventListener('click', function() { cycleBg(); });
+        btnBg.addEventListener('contextmenu', function(e) {
+            e.preventDefault(); colorPicker.classList.toggle('show');
+        });
+        document.addEventListener('click', function(e) {
+            if (!colorPicker.contains(e.target) && e.target !== btnBg && !btnBg.contains(e.target))
+                colorPicker.classList.remove('show');
+            if (!metaPinned && !metaPanel.contains(e.target) && e.target !== btnMeta && !btnMeta.contains(e.target))
+                metaPanel.classList.remove('show');
+        });
+
+        if (bgIndex < 0) { bgLayer.className = ''; bgLayer.style.background = customBgColor; }
+        else applyBg();
+
+        // --- Auto-hide ---
+        function showControls() {
+            controls.classList.remove('hidden');
+            topBar.classList.remove('hidden');
+            infoEl.classList.add('show');
+            resetHideTimer();
+        }
+        function hideControls() {
+            if (isDragging) return;
+            controls.classList.add('hidden');
+            topBar.classList.add('hidden');
+            infoEl.classList.remove('show');
+            volumeLayer.classList.remove('show');
+            colorPicker.classList.remove('show');
+            metaPanel.classList.remove('show');
+        }
+        function resetHideTimer() {
+            if (hideTimer) clearTimeout(hideTimer);
+            hideTimer = setTimeout(hideControls, 1500);
+        }
+        document.addEventListener('mousemove', showControls);
+        document.addEventListener('mousedown', showControls);
+
+        // --- Time ---
+        function fmt(s) {
+            var m = Math.floor(s / 60);
+            var sec = Math.floor(s % 60);
+            return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+        }
+
+        function log(msg) {
+            console.log('[AlphaVideo] ' + msg);
+            if (window.chrome && window.chrome.webview)
+                window.chrome.webview.postMessage({type:'log', message:msg});
+        }
+
+        function updateInfo() {
+            infoEl.textContent = displaySize() + ' \u00b7 ' + (orientation === 'portrait' ? T('LAYOUT_TopBottom') : T('LAYOUT_SideBySide')) + ' \u00b7 Alpha ' + alphaSideLabel();
+        }
+
+        // --- Volume ---
+        function updateVolumeIcon() {
+            var v = isMuted ? 0 : volume;
+            if (v < 0.01) volumeIcon.textContent = ICON_VOL0;
+            else if (v < 0.34) volumeIcon.textContent = ICON_VOL1;
+            else if (v < 0.67) volumeIcon.textContent = ICON_VOL2;
+            else volumeIcon.textContent = ICON_VOL3;
+        }
+
+        function applyVolume() {
+            var v = isMuted ? 0 : volume;
+            volumeSlider.value = Math.round(v * 100);
+            if (player) player.setMute(isMuted || v === 0);
+            if (videoEl) videoEl.volume = v;
+            updateVolumeIcon();
+        }
+
+        btnMute.addEventListener('click', function() {
+            isMuted = !isMuted;
+            if (!isMuted && volume === 0) volume = 0.5;
+            applyVolume();
+        });
+        volumeSlider.addEventListener('input', function() {
+            volume = volumeSlider.value / 100;
+            isMuted = volume === 0;
+            applyVolume();
+        });
+
+        document.addEventListener('wheel', function(e) {
+            if (e.ctrlKey) {
+                e.preventDefault();
+                var delta = e.deltaY > 0 ? -0.1 : 0.1;
+                zoomLevel = Math.max(0.1, Math.min(5.0, zoomLevel + delta));
+                applyTransform(); showZoomInfo(); showControls();
+            } else {
+                if (e.deltaY < 0) volume = Math.min(1, volume + 0.04);
+                else volume = Math.max(0, volume - 0.04);
+                isMuted = volume === 0;
+                applyVolume(); showControls();
+                volumeLayer.classList.add('show');
+                clearTimeout(hideTimer);
+                hideTimer = setTimeout(function() { volumeLayer.classList.remove('show'); }, 1500);
+            }
+        }, { passive: false });
+
+        // --- Canvas zoom + pan ---
+        var zoomLevel = 1.0;
+        var zoomHideTimer = null;
+        var panX = 0, panY = 0;
+        var isPanning = false;
+        var panStartX = 0, panStartY = 0;
+
+        function applyTransform() {
+            stage.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + zoomLevel + ')';
+        }
+
+        function showZoomInfo() {
+            zoomInfoEl.textContent = Math.round(zoomLevel * 100) + '%';
+            zoomInfoEl.style.opacity = '0.9';
+            if (zoomHideTimer) clearTimeout(zoomHideTimer);
+            zoomHideTimer = setTimeout(function() { zoomInfoEl.style.opacity = '0'; }, 600);
+        }
+
+        function resetView() {
+            zoomLevel = 1.0; panX = 0; panY = 0;
+            applyTransform(); showZoomInfo();
+        }
+
+        stage.addEventListener('dblclick', resetView);
+
+        stage.addEventListener('mousedown', function(e) {
+            if (e.button === 0) {
+                isPanning = true;
+                panStartX = e.clientX - panX;
+                panStartY = e.clientY - panY;
+                e.preventDefault();
+            }
+        });
+        document.addEventListener('mousemove', function(e) {
+            if (isPanning) {
+                panX = e.clientX - panStartX;
+                panY = e.clientY - panStartY;
+                applyTransform();
+            }
+        });
+        document.addEventListener('mouseup', function() { isPanning = false; });
+
+        // --- Window drag (click on background area) ---
+        bgLayer.addEventListener('mousedown', function(e) {
+            if (e.button === 0) {
+                e.preventDefault();
+                if (window.chrome && window.chrome.webview)
+                    window.chrome.webview.postMessage({type: 'startDrag'});
+            }
+        });
+
+        // --- Progress ---
+        function updateProgress(p) {
+            var pct = (p * 100).toFixed(2) + '%';
+            progressFill.style.width = 'calc(' + pct + ' - 10px)';
+            progressThumb.style.left = 'calc(' + pct + ')';
+            timeEl.textContent = fmt(duration * p) + ' / ' + fmt(duration);
+        }
+
+        function updatePlayBtn() {
+            btnPlay.querySelector('.icon').textContent = isPlaying ? ICON_PAUSE : ICON_PLAY;
+        }
+
+        var rafId = 0;
+        function tick() {
+            if (videoEl && duration > 0 && !isDragging) {
+                updateProgress(Math.min(1, videoEl.currentTime / duration));
+            }
+            rafId = requestAnimationFrame(tick);
+        }
+
+        function getProgressFromEvent(e) {
+            var rect = progressWrap.getBoundingClientRect();
+            return Math.max(0, Math.min(1, (e.clientX - rect.left - 10) / (rect.width - 20)));
+        }
+
+        progressWrap.addEventListener('mousedown', function(e) {
+            isDragging = true; progressWrap.classList.add('dragging');
+            var p = getProgressFromEvent(e); updateProgress(p);
+            if (player && duration > 0) player.setCurrentTime(p * duration);
+        });
+        document.addEventListener('mousemove', function(e) {
+            if (isDragging) {
+                var p = getProgressFromEvent(e); updateProgress(p);
+                if (player && duration > 0) player.setCurrentTime(p * duration);
+            }
+        });
+        document.addEventListener('mouseup', function() {
+            isDragging = false; progressWrap.classList.remove('dragging');
+        });
+
+        // --- Buttons ---
+        btnPlay.addEventListener('click', function() {
+            if (!player) return;
+            if (isPlaying) player.pause(); else player.play();
+        });
+
+        btnLoop.addEventListener('click', function() {
+            isLooping = !isLooping;
+            btnLoop.classList.toggle('active', isLooping);
+            btnLoop.querySelector('.icon').textContent = isLooping ? ICON_LOOP_ON : ICON_LOOP_OFF;
+            if (player) player.setLoop(isLooping);
+        });
+
+        // --- Load video via alpha-video-player-js ---
+        async function loadFile(msg) {
+            try {
+                statusEl.textContent = T('STATUS_Decoding');
+                statusEl.style.display = '';
+
+                orientation = msg.orientation || 'landscape';
+                side = msg.side || 'back';
+                rawW = msg.rawWidth || 0;
+                rawH = msg.rawHeight || 0;
+
+                if (player) { try { player.destroy(); } catch(e){} player = null; }
+                if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+
+                var mod = await import(msg.playerSrc);
+                var Render = mod.default;
+
+                var raw = atob(msg.base64);
+                var buf = new Uint8Array(raw.length);
+                for (var i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+                blobUrl = URL.createObjectURL(new Blob([buf], { type: 'video/mp4' }));
+
+                player = new Render({
+                    container: stage,
+                    src: blobUrl,
+                    orientation: orientation,
+                    side: side,
+                    muted: isMuted,
+                    loop: isLooping,
+                    autoResize: 'contain',
+                    debug: false,
+                    onInitSuccess: function() { log('player init'); },
+                    onInitError: function(e) { fail('WebGL init failed'); },
+                    onCanPlay: function() {
+                        videoEl = stage.querySelector('video');
+                        if (videoEl) {
+                            duration = videoEl.duration || 0;
+                            videoEl.volume = volume;
+                        }
+                        statusEl.style.display = 'none';
+                        updateInfo();
+                        updatePlayBtn();
+                        if (!rafId) rafId = requestAnimationFrame(tick);
+                        if (window.chrome && window.chrome.webview)
+                            window.chrome.webview.postMessage({type:'loaded'});
+                        log('canplay, duration=' + duration);
+                    },
+                    onPlay: function() { isPlaying = true; updatePlayBtn(); },
+                    onPause: function() { isPlaying = false; updatePlayBtn(); },
+                    onEnded: function() { isPlaying = false; updatePlayBtn(); },
+                    onLoop: function() { },
+                    onError: function(e) {
+                        var m = (e && (e.message || e.toString())) || 'unknown';
+                        fail(m);
+                    }
+                });
+
+                applyVolume();
+                await player.play();
+            } catch (err) {
+                fail(err.message || String(err));
+            }
+        }
+
+        function fail(message) {
+            statusEl.textContent = T('STATUS_Error') + ': ' + message;
+            log('Error: ' + message);
+            if (window.chrome && window.chrome.webview)
+                window.chrome.webview.postMessage({type:'error', message:message});
+        }
+
+        // --- Messages from C# ---
+        window.addEventListener('message', function(e) {
+            var msg = e.data;
+            if (!msg || typeof msg !== 'object') return;
+            if (msg.type === 'loadFile') loadFile(msg);
+        });
+
+        log('Page ready');
+        if (window.chrome && window.chrome.webview)
+            window.chrome.webview.postMessage({type:'ready'});
+    })();
+    </script>
+</body>
+</html>
