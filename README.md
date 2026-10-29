@@ -14,7 +14,7 @@
 
 ### 功能特性
 
-- 宽松自动识别：读取 MP4 `tkhd` 尺寸做初筛，再用逐帧像素自检确定实际拼接方式（左右 / 上下半幅、VAP 象限遮罩都支持）
+- 两级自动识别：MP4 `tkhd` 尺寸做几何初筛，再用 Media Foundation 真解几帧像素自检确认拼接特征（左右 / 上下半幅、VAP 象限遮罩都支持）；普通 MP4/MOV/M4V 一旦确认为两半皆彩色，直接交回内置 VideoViewer（宁漏勿抢）
 - 判据是「遮罩有多纯灰 × 画面有多彩 × 两块包围盒是否对齐」，纯色/降采样遮罩都能命中；合成结果几乎全透明时自动退回普通预览，不会显示一片空白
 - 工具栏一键在候选方案间翻转（含切回不处理的原始视频预览），带遮罩区域可视化
 - 自写极简 WebGL 合成器（单帧纹理取两个源矩形，`rgb × alpha` 预乘输出），可原生表达主区与遮罩不同长宽比的 VAP 素材
@@ -65,7 +65,8 @@ powershell -ExecutionPolicy Bypass -File Scripts/build.ps1
 
 ```
 ├── Plugin.cs                          # IViewer 入口（Priority 100）
-├── Probing/Mp4Probe.cs                # MP4 尺寸探测 + 拼接布局判定
+├── Probing/Mp4Probe.cs                # MP4 tkhd 尺寸 + mvhd 时长 + 拼接布局几何初筛
+├── Probing/FrameProbe.cs              # Media Foundation 解码像素自检（普通视频交回原生）
 ├── AlphaVideoViewerPanel.xaml(.cs)    # WebView2 播放面板
 ├── Resources/Web/
 │   ├── alpha-compositor.js           # 自写 WebGL Alpha 合成器（ES module）
@@ -90,7 +91,7 @@ powershell -ExecutionPolicy Bypass -File Scripts/build.ps1
 
 ### 已知限制
 
-- `tkhd` 尺寸只做宽松初筛（切半后内容宽高比落在 1:1～2.5:1 都会接管），真正判定交给前端逐帧像素自检；普通视频多会在自检失败后以原始画面呈现，但宽高比恰好落在该区间的普通视频仍会被本插件接管（可用翻转按钮切回原始预览）
+- 几何初筛（切半后内容宽高比 1:1～2.5:1）无法区分真实拼接与普通视频；Media Foundation 解码像素自检负责确认，命中"两半皆彩色"的普通 MP4/MOV/M4V 会直接交回内置 VideoViewer，无需手动翻转。若机器缺少所需解码器、单色/暗场帧占比过大等无法定论的情况，仍沿用几何初筛接管并交给前端逐帧自检——这是有意的"宁漏勿抢"降级
 - 腾讯 VAP 的"主区占半幅、遮罩降采样塞进相邻象限"能自动识别，但不解析 `.vap` / ZIP / JSON / YYEVA 元数据，也不还原其动态元素，仅按像素推断的矩形合成
 - 不支持从预览界面保存透明 PNG 帧（WebGL 画布读取限制）
 - `.gif` / `.webm` 等其他透明视频容器不在接管范围
@@ -107,7 +108,7 @@ Motion-design assets (ByteDance-style effects, live-stream stickers, H5 template
 
 ### Features
 
-- Loose auto-detection: `tkhd` dimensions pre-filter, then a per-frame pixel self-check picks the actual layout (side-by-side / top-bottom halves, VAP quadrant masks all supported)
+- Two-stage auto-detection: MP4 `tkhd` geometry pre-filter, then a Media Foundation decode pass samples real pixels to confirm the split (side-by-side / top-bottom halves, Tencent VAP quadrant masks all supported); ordinary MP4/MOV/M4V whose decoded halves are both colourful is handed straight back to the built-in VideoViewer (never grabs an unconfirmed match)
 - Scored by "how grey the mask is × how colourful the frame is × how the two bounding boxes align"; solid or downsampled masks both match, and an essentially-empty composite falls back to plain video instead of showing nothing
 - Toolbar button cycles candidates (including a return to the untouched video preview) with mask-region visualisation
 - Self-written minimal WebGL compositor (two source rects from one frame texture, premultiplied `rgb × alpha`) so main and mask can have different aspect ratios
@@ -156,7 +157,7 @@ In a browser, `?autotest=<url-encoded path>[|WxH]` loads a sample straight into 
 
 ### Known Limitations
 
-- `tkhd` dimensions are only a loose pre-filter (any file whose halved content aspect falls in 1:1–2.5:1 is opened); the per-frame pixel check is the real decider, so ordinary videos usually render untouched, but a normal video inside that aspect band is still opened by this plugin (flip back to the raw preview)
+- The geometry pre-filter (halved aspect 1:1–2.5:1) cannot tell real split assets from ordinary videos on its own; the Media Foundation decode pass is what confirms them. Any MP4/MOV/M4V whose decoded halves are both colourful is handed back to the built-in VideoViewer without a manual flip. If the required decoder is missing, sampled frames are dominated by monochrome/dark ambiguity, or the decode path fails, the plugin still takes over and lets the front-end per-frame self-check decide — an intentional "would rather miss than grab" degradation
 - Tencent VAP "main fills a half, mask downsampled into an adjacent quadrant" is auto-detected, but `.vap` / ZIP / JSON / YYEVA metadata is not parsed and their dynamic elements are not restored — only the pixel-inferred rects are composited
 - Saving transparent PNG frames from the preview is not supported (WebGL readback limitation)
 - Other transparent containers (`.gif`, `.webm`) are out of scope

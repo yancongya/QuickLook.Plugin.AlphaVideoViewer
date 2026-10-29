@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Initial scaffold: WebView2 transparent preview with a self-written minimal WebGL compositor (`alpha-compositor.js`) — two source rects from one frame texture, premultiplied `rgb × alpha`
 - Loose detection: MP4 `tkhd` pre-filter + per-frame pixel self-check that scores every candidate (side-by-side / top-bottom halves, Tencent VAP quadrant masks at half resolution) by alpha purity × content colourfulness × bounding-box alignment
+- Decode-gate in `CanHandle`: `Probing/FrameProbe.cs` runs Media Foundation `IMFSourceReader` synchronously on the UI thread, samples a few RGB32 frames, and returns `false` for ordinary MP4/MOV/M4V (both halves colourful) so the built-in VideoViewer takes them; genuine Alpha/RGB-split assets continue to be grabbed. Any uncertainty (missing decoder, ambiguous monochrome, decode error) degrades to `Unknown` and preserves the geometry pre-filter result — monotonic-safe "would rather miss than grab"
 - Auto fallback to the untouched video preview when no split is found or the composite is essentially empty
 - Toolbar candidate flip, background cycle (default/checker/white/black/custom), zoom & pan
 - README/AGENTS testing section documenting the native sample corpus and the `?autotest` hook

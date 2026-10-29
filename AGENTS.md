@@ -15,14 +15,19 @@ powershell -ExecutionPolicy Bypass -File Scripts/pack-zip.ps1
 QuickLook plugin for previewing alpha/RGB split transparent videos (MP4/MOV).
 Uses WebView2 + a self-written minimal WebGL compositor (`alpha-compositor.js`) that samples
 two source rects from one frame texture and outputs `rgb × alpha` with premultiplied blending.
-Detection is loose: pixel self-check picks the split layout automatically; a toolbar button
-cycles candidates and can fall back to the plain, non-composited video preview.
-Ordinary videos stay with the built-in VideoViewer ("宁漏勿抢").
+Two-stage detection: MP4 `tkhd` geometry pre-filter, then a Media Foundation decode pass
+(`Probing/FrameProbe.cs`) samples RGB32 pixels on the UI thread to confirm the split layout
+automatically. Ordinary MP4/MOV/M4V whose halves are both colourful returns `false` from
+`CanHandle` so the built-in VideoViewer takes them; a toolbar button cycles candidates and
+can fall back to the plain, non-composited video preview when the front-end self-check
+disagrees. Any decode failure or ambiguous frame degrades to `Unknown` and preserves the
+geometry grab — monotonic-safe "宁漏勿抢".
 
 ## Key Files
 
-- `Plugin.cs` - IViewer entry point (Priority 100), CanHandle via Mp4Probe
-- `Probing/Mp4Probe.cs` - ISO BMFF tkhd size reader with 60s cache
+- `Plugin.cs` - IViewer entry point (Priority 100), CanHandle = Mp4Probe geometry → FrameProbe decode gate
+- `Probing/Mp4Probe.cs` - ISO BMFF tkhd size + mvhd duration reader with 60s cache
+- `Probing/FrameProbe.cs` - Media Foundation `IMFSourceReader` RGB32 pixel self-check (hides manual COM vtable dispatch)
 - `AlphaVideoViewerPanel.xaml.cs` - WebView2 panel, manages lifecycle and theme
 - `Resources/Web/alpha-player.html` - Player UI + auto-detection + layout candidates
 - `Resources/Web/alpha-compositor.js` - self-written WebGL alpha compositor (ES module)
@@ -56,6 +61,10 @@ Plugin.cs (IViewer)
 - Browser harness: serve the repo root over http and open
   `Resources/Web/alpha-player.html?autotest=<url-encoded sample path>[|WxH]`; it loads the file
   straight into the detector. This hook is dev-only — the plugin runtime never uses it.
+- FrameProbe harness: `scratch/fp/` (meta workspace) compiles `Mp4Probe.cs` + `FrameProbe.cs`
+  into `fpharness.exe`; run it with and without `FPSEEK=1` to verify both the seek-sampled
+  and sequential paths classify each sample as `AlphaLike` (grab) or `NotAlpha` (native).
+  GUIDs must come from `Windows Kits/10/Include/…/um/mfapi.h` — do not trust web snippets.
 - QuickLook only scans the plugin dir at process start, so a rebuilt `.qlplugin` needs a restart to load.
 
 ## CI / Release

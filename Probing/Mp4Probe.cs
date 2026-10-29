@@ -19,6 +19,9 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
         public int Height;
         public AlphaLayout Layout = AlphaLayout.None;
 
+        /// <summary>时长（秒），来自 mvhd；解析不到则为 0。供 FrameProbe 按比例 seek 取样帧。</summary>
+        public double DurationSeconds;
+
         /// <summary>
         /// 窄边占比（0..1）：短边 / 长边。
         /// =1 表示两个半区都是正方形（严格 2:1 素材），&lt;1 表示另一边是窄条或内容不满（VAP 常见）。
@@ -100,10 +103,16 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
                 if (moov == null) return None();
 
                 int bestW = 0, bestH = 0;
-                foreach (var trak in Boxes(moov, 0, moov.Length))
+                double duration = 0.0;
+                foreach (var child in Boxes(moov, 0, moov.Length))
                 {
-                    if (trak.Key != "trak") continue;
-                    foreach (var tkhd in Boxes(trak.Value, 0, trak.Value.Length))
+                    if (child.Key == "mvhd")
+                    {
+                        ReadDuration(child.Value, out duration);
+                        continue;
+                    }
+                    if (child.Key != "trak") continue;
+                    foreach (var tkhd in Boxes(child.Value, 0, child.Value.Length))
                     {
                         if (tkhd.Key != "tkhd") continue;
                         ReadDimensions(tkhd.Value, out int w, out int h);
@@ -140,6 +149,7 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
                     Width = bestW,
                     Height = bestH,
                     Layout = layout,
+                    DurationSeconds = duration,
                     // 短边 / 长边：alpha 窄区相对正方形内容区的占比
                     AlphaScale = shortSide / longSide,
                     CheckedAt = DateTime.Now
@@ -201,6 +211,27 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
             if (payload.Length < 8) return;
             width = (int)Math.Round(Be32(payload, payload.Length - 8) / 65536.0);
             height = (int)Math.Round(Be32(payload, payload.Length - 4) / 65536.0);
+        }
+
+        /// <summary>mvhd 时长 = duration / timescale；v0 各字段 4 字节、v1 时间戳与时长为 8 字节。</summary>
+        private static void ReadDuration(byte[] payload, out double seconds)
+        {
+            seconds = 0.0;
+            if (payload == null || payload.Length < 4) return;
+            if (payload[0] == 1)
+            {
+                if (payload.Length < 32) return;
+                uint timescale = Be32(payload, 20);
+                long dur = Be64(payload, 24);
+                if (timescale != 0 && dur > 0) seconds = (double)dur / timescale;
+            }
+            else
+            {
+                if (payload.Length < 20) return;
+                uint timescale = Be32(payload, 12);
+                uint dur = Be32(payload, 16);
+                if (timescale != 0 && dur > 0) seconds = (double)dur / timescale;
+            }
         }
 
         private static IEnumerable<KeyValuePair<string, byte[]>> Boxes(byte[] buf, int start, int end)

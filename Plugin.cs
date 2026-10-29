@@ -8,7 +8,8 @@ namespace QuickLook.Plugin.AlphaVideoViewer
 {
     /// <summary>
     /// 接管「Alpha/RGB 左右或上下拼接」的透明视频（MP4/MOV），透明合成播放。
-    /// 只接管探测确认为拼接布局的文件；普通 MP4 一律返回 false，交回内置 VideoViewer（宁漏勿抢）。
+    /// 两级判定：容器 tkhd 宽高比初筛 + 解码像素自检（FrameProbe）确认拼接特征；
+    /// 普通 MP4（两半都彩色）经自检确认后交回内置 VideoViewer，无法定论时才沿用初筛（宁漏勿抢）。
     /// </summary>
     public class Plugin : IViewer
     {
@@ -32,7 +33,14 @@ namespace QuickLook.Plugin.AlphaVideoViewer
                 return false;
 
             var probe = Mp4Probe.Probe(path);
-            return probe != null && probe.Layout != AlphaLayout.None;
+            if (probe == null || probe.Layout == AlphaLayout.None) return false;
+
+            // 几何初筛只按宽高比放宽（普通 16:9/4:3 切半后也落在区间内），无法区分真实拼接与普通视频；
+            // 再解几帧做像素自检：确认为普通视频（两半都彩色）→ 交回内置 VideoViewer；
+            // 命中拼接或无法定论（解码失败/单色歧义）→ 沿用几何初筛接管，细节交前端逐帧自检。宁漏勿抢。
+            var check = FrameProbe.Check(path, probe.Width, probe.Height, probe.DurationSeconds);
+            if (check == SplitCheck.NotAlpha) return false;
+            return true;
         }
 
         public void Prepare(string path, ContextObject context)
