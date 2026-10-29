@@ -84,7 +84,7 @@ powershell -ExecutionPolicy Bypass -File Scripts/build.ps1
 |------|----------|
 | `alphaplayer_demo_video.mp4` / `alphaplayer_heartbeats.mp4` | 左右半幅（右 RGB / 左 Alpha）透明合成 |
 | `vap_demo.mp4` | 腾讯 VAP「主区半幅 + 遮罩降采样象限」几何 |
-| `yyeva_demo_pk.mp4` / `yyeva_out.mp4` / `yyeva_demo_ufo.mov` | 像素判非拼接 / 合成近乎全透明 → 退回原始画面 |
+| `yyeva_out.mp4` / `yyeva_demo_ufo.mov` | 像素判非拼接 / 合成近乎全透明 → 退回原始画面 |
 
 浏览器侧可用 `?autotest=<url-encoded 路径>[|WxH]` 直接加载某个样本跑检测（仅 harness 用，插件运行不依赖）。
 
@@ -150,7 +150,7 @@ powershell -ExecutionPolicy Bypass -File Scripts/build.ps1
 |--------|------------------|
 | `alphaplayer_demo_video.mp4` / `alphaplayer_heartbeats.mp4` | side-by-side halves (RGB right / alpha left) transparent compositing |
 | `vap_demo.mp4` | Tencent VAP "main fills a half + downsampled mask quadrant" geometry |
-| `yyeva_demo_pk.mp4` / `yyeva_out.mp4` / `yyeva_demo_ufo.mov` | pixel check says not-a-split / composite ~empty → fall back to plain video |
+| `yyeva_out.mp4` / `yyeva_demo_ufo.mov` | pixel check says not-a-split / composite ~empty → fall back to plain video |
 
 In a browser, `?autotest=<url-encoded path>[|WxH]` loads a sample straight into the detector (harness only; the plugin runtime does not rely on it).
 

@@ -12,8 +12,7 @@
 | `alphaplayer_demo_video.mp4` | [bytedance/AlphaPlayer](https://github.com/bytedance/AlphaPlayer) `android/gift/demoRes/demo_video.mp4`（Apache-2.0） | 1440×2000 | ✅ 原生接管，半幅（右 RGB / 左 Alpha），透明播放（沙漏礼物动效） |
 | `alphaplayer_heartbeats.mp4` | 同上 `iOS/Example/.../TestResource/heartbeats/heartbeats.mp4` | 1440×1280 | ✅ 原生接管，半幅（右 RGB / 左 Alpha），心跳 + 心电图 |
 | `vap_demo.mp4` | [Tencent/vap](https://github.com/Tencent/vap) `Android/PlayerProj/app/src/main/assets/demo.mp4`（MIT） | 752×880 | ✅ 接管，VAP 布局（主区占上半、遮罩降采样塞进下半左象限） |
-| `yyeva_demo_pk.mp4` | [yylive/YYEVA](https://github.com/yylive/YYEVA) `img/demo_pk.mp4`（Apache-2.0） | 828×1792 | ⚠️ 像素自检判非拼接 → 以原始画面预览（`mode=video`） |
-| `yyeva_out.mp4` | 同上 `img/out.mp4` | 672×704 | ⚠️ 合成近乎全透明 → 自动退回原始画面（`mode=video`，compositedVisibility 兜底） |
+| `yyeva_out.mp4` | [yylive/YYEVA](https://github.com/yylive/YYEVA) `img/out.mp4`（Apache-2.0） | 672×704 | ⚠️ 合成近乎全透明 → 自动退回原始画面（`mode=video`，compositedVisibility 兜底） |
 | `yyeva_demo_ufo.mov` | 同上 `img/demo_ufo.mov` | 672×704 | ⚠️ 依赖元数据声明的遮罩区域，像素推断不稳定 → 退回原始画面 |
 
 关于「内嵌 JSON」：VAP 的遮罩区域/动态元素写在 **`.vap` 容器**的 JSON 头里，`.mp4` 裸视频里
