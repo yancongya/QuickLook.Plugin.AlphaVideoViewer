@@ -1,5 +1,7 @@
 # QuickLook.Plugin.AlphaVideoViewer
 
+> 同系列插件 / More plugins: [SvgaViewer](https://github.com/yancongya/QuickLook.Plugin.SvgaViewer) · [PagViewer](https://github.com/yancongya/QuickLook.Plugin.PagViewer) · [PluginManager](https://github.com/yancongya/QuickLook.Plugin.PluginManager)
+
 [中文](#中文) | [English](#english)
 
 ---
