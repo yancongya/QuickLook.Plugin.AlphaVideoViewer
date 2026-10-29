@@ -70,11 +70,23 @@ powershell -ExecutionPolicy Bypass -File Scripts/build.ps1
 ├── Resources/Web/
 │   ├── alpha-compositor.js           # 自写 WebGL Alpha 合成器（ES module）
 │   └── alpha-player.html             # 播放器 UI + 拼接自检
-├── Samples/                           # 测试用示例文件
+├── Samples/                           # 回归测试素材（仅各官方仓库直接提供的原生文件）
 ├── Translations.config                # 中英文翻译
 ├── Scripts/
 └── *.csproj / *.sln
 ```
+
+### 回归测试
+
+`Samples/` 只保留各官方仓库**直接提供**的原生 demo（不再放 ffmpeg 生成或手工重拼的对照素材——宽松像素自检后原生文件即可直接命中）。每个文件的来源、尺寸与预期行为见 [Samples/SOURCES.md](Samples/SOURCES.md)。
+
+| 素材 | 覆盖场景 |
+|------|----------|
+| `alphaplayer_demo_video.mp4` / `alphaplayer_heartbeats.mp4` | 左右半幅（右 RGB / 左 Alpha）透明合成 |
+| `vap_demo.mp4` | 腾讯 VAP「主区半幅 + 遮罩降采样象限」几何 |
+| `yyeva_demo_pk.mp4` / `yyeva_out.mp4` / `yyeva_demo_ufo.mov` | 像素判非拼接 / 合成近乎全透明 → 退回原始画面 |
+
+浏览器侧可用 `?autotest=<url-encoded 路径>[|WxH]` 直接加载某个样本跑检测（仅 harness 用，插件运行不依赖）。
 
 ### 已知限制
 
@@ -129,6 +141,18 @@ Package as `.qlplugin`:
 ```powershell
 powershell -ExecutionPolicy Bypass -File Scripts/build.ps1
 ```
+
+### Testing
+
+`Samples/` keeps only the native demos shipped **directly by their official repos** — no ffmpeg-generated or hand-recombined fixtures any more, since the loose pixel self-check matches the real files as-is. Each file's source, size and expected behaviour are listed in [Samples/SOURCES.md](Samples/SOURCES.md).
+
+| Sample | Scenario covered |
+|--------|------------------|
+| `alphaplayer_demo_video.mp4` / `alphaplayer_heartbeats.mp4` | side-by-side halves (RGB right / alpha left) transparent compositing |
+| `vap_demo.mp4` | Tencent VAP "main fills a half + downsampled mask quadrant" geometry |
+| `yyeva_demo_pk.mp4` / `yyeva_out.mp4` / `yyeva_demo_ufo.mov` | pixel check says not-a-split / composite ~empty → fall back to plain video |
+
+In a browser, `?autotest=<url-encoded path>[|WxH]` loads a sample straight into the detector (harness only; the plugin runtime does not rely on it).
 
 ### Known Limitations
 

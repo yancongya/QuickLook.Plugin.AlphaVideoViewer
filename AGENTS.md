@@ -48,6 +48,16 @@ Plugin.cs (IViewer)
 - Manual flip cycles candidates; there is no fixed side/orientation handed over from C#.
 - Supported extensions: .mp4 / .mov / .m4v only; no ZIP/JSON/VAP-metadata/YYEVA handling
 
+## Testing
+
+- `Samples/` holds only native demos pulled directly from their official repos (AlphaPlayer ×2,
+  Tencent VAP `vap_demo`, YYEVA ×3). Do NOT add ffmpeg-generated or hand-recombined fixtures —
+  the loose pixel self-check matches the real files as-is. Provenance/expected behaviour: `Samples/SOURCES.md`.
+- Browser harness: serve the repo root over http and open
+  `Resources/Web/alpha-player.html?autotest=<url-encoded sample path>[|WxH]`; it loads the file
+  straight into the detector. This hook is dev-only — the plugin runtime never uses it.
+- QuickLook only scans the plugin dir at process start, so a rebuilt `.qlplugin` needs a restart to load.
+
 ## CI / Release
 
 - push `master` / PR / 手动：构建 + 打包，上传 Artifact（14 天），**不**发 Release
