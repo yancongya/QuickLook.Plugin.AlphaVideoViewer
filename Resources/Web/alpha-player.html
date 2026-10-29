@@ -131,26 +131,33 @@
         }
         .swatch:hover { border-color: var(--fg); }
 
-        /* Mode dropdown (auto / alpha / video) */
-        #modeMenu {
+        /* Dropdown menus (mode / alpha side) */
+        .dropMenu {
             position: absolute; top: 36px; right: 8px;
             min-width: 128px;
             background: var(--control-bg);
             padding: 4px 0; border-radius: 4px;
             display: none; z-index: 21;
         }
-        #modeMenu.show { display: block; }
-        #modeMenu .mode-item {
+        .dropMenu.show { display: block; }
+        .dropMenu .mode-head {
+            padding: 6px 10px 2px;
+            color: var(--fg-alt); font-size: 11px; opacity: 0.8;
+            user-select: none; white-space: nowrap;
+        }
+        .dropMenu .mode-item {
             display: flex; align-items: center;
             padding: 6px 10px; cursor: pointer;
             color: var(--fg); font-size: 12px; white-space: nowrap;
         }
-        #modeMenu .mode-item:hover { background: rgba(255,255,255,0.1); }
-        #modeMenu .mode-item .mi-check {
+        .dropMenu .mode-item:hover { background: rgba(255,255,255,0.1); }
+        .dropMenu .mode-item .mi-check {
             margin-left: auto; padding-left: 12px;
             font-size: 12px; visibility: hidden;
         }
-        #modeMenu .mode-item.checked .mi-check { visibility: visible; }
+        .dropMenu .mode-item.checked .mi-check { visibility: visible; }
+        .dropMenu .mode-item.disabled { opacity: 0.4; cursor: default; }
+        .dropMenu .mode-item.disabled:hover { background: transparent; }
 
         /* Control bar */
         #controls {
@@ -287,10 +294,20 @@
                 <span class="icon">&#xEF1F;</span>
             </button>
         </div>
-        <div id="modeMenu">
+        <div id="modeMenu" class="dropMenu">
             <div class="mode-item" data-mode="auto"><span class="mi-label">自动</span><span class="mi-check">&#xE73E;</span></div>
             <div class="mode-item" data-mode="alpha"><span class="mi-label">透明合成</span><span class="mi-check">&#xE73E;</span></div>
             <div class="mode-item" data-mode="video"><span class="mi-label">普通视频</span><span class="mi-check">&#xE73E;</span></div>
+        </div>
+        <div id="sideMenu" class="dropMenu">
+            <div class="mode-head mi-label">Alpha 位置</div>
+            <div class="mode-item" data-side="auto"><span class="mi-label">自动识别</span><span class="mi-check">&#xE73E;</span></div>
+            <div class="mode-head mi-label">半幅拼接</div>
+            <div class="mode-item" data-side="left"><span class="mi-label">左</span><span class="mi-check">&#xE73E;</span></div>
+            <div class="mode-item" data-side="right"><span class="mi-label">右</span><span class="mi-check">&#xE73E;</span></div>
+            <div class="mode-item" data-side="top"><span class="mi-label">上</span><span class="mi-check">&#xE73E;</span></div>
+            <div class="mode-item" data-side="bottom"><span class="mi-label">下</span><span class="mi-check">&#xE73E;</span></div>
+            <div class="mode-item" data-side="nextvap"><span class="mi-label">下一个四分幅候选</span><span class="mi-check">&#xE73E;</span></div>
         </div>
         <div id="metaPanel"></div>
         <div id="colorPicker">
@@ -368,6 +385,8 @@
             'SIDE_Right': {zh:'右',en:'Right'},
             'SIDE_Top': {zh:'上',en:'Top'},
             'SIDE_Bottom': {zh:'下',en:'Bottom'},
+            'SIDE_Auto': {zh:'自动识别',en:'Auto detect'},
+            'SIDE_NextVap': {zh:'下一个四分幅候选',en:'Next quarter-mask candidate'},
             'TOAST_Saved': {zh:'已保存',en:'Saved'},
             'TOAST_Copied': {zh:'已复制',en:'Copied'}
         };
@@ -391,6 +410,10 @@
         var modeMenu = document.getElementById('modeMenu');
         var modeMenuOpen = false;
         var MODE_KEYS = ['MODE_Auto', 'MODE_Alpha', 'MODE_Video'];
+        var sideMenu = document.getElementById('sideMenu');
+        var sideMenuOpen = false;
+        var SIDE_KEYS = ['META_AlphaSide', 'SIDE_Auto', 'PACK_Half',
+                         'SIDE_Left', 'SIDE_Right', 'SIDE_Top', 'SIDE_Bottom', 'SIDE_NextVap'];
         var metaPanel = document.getElementById('metaPanel');
         var colorPicker = document.getElementById('colorPicker');
         var customColor = document.getElementById('customColor');
@@ -430,6 +453,9 @@
             var mi = modeMenu.querySelectorAll('.mode-item');
             for (var i = 0; i < mi.length; i++)
                 mi[i].querySelector('.mi-label').textContent = T(MODE_KEYS[i]);
+            var si = sideMenu.querySelectorAll('.mi-label');
+            for (var j = 0; j < si.length; j++)
+                si[j].textContent = T(SIDE_KEYS[j]);
             btnBg.title = T('BTN_Background');
             document.querySelector('.swatch[data-bg="default"]').title = T('BG_Default');
             document.querySelector('.swatch[data-bg="checker"]').title = T('BG_Checker');
@@ -983,6 +1009,7 @@
         // 模式下拉：点按钮展开/收起列表；点列表项选模式；点面板外任意处收起
         btnMode.addEventListener('click', function(e) {
             e.stopPropagation();
+            setSideMenu(false);
             setModeMenu(!modeMenuOpen);
         });
         modeMenu.addEventListener('click', function(e) {
@@ -995,20 +1022,79 @@
         document.addEventListener('click', function(e) {
             if (modeMenuOpen && !modeMenu.contains(e.target) && !btnMode.contains(e.target))
                 setModeMenu(false);
+            if (sideMenuOpen && !sideMenu.contains(e.target) && !btnFlip.contains(e.target))
+                setSideMenu(false);
         });
 
-        // --- 手动切换拼接方案：在当前几何允许的所有候选里循环 ---
-        btnFlip.addEventListener('click', function() {
-            if (!candidates.length) return;
-            var idx = current ? candidates.indexOf(current) : -1;
-            var next = candidates[(idx + 1 + candidates.length) % candidates.length];
+        // --- Alpha 位置下拉：默认自动识别，可手动指定半幅位置或轮换四分幅候选 ---
+        function setSideMenu(open) {
+            sideMenuOpen = open;
+            sideMenu.classList.toggle('show', open);
+            if (open) updateSideMenu();
+        }
+
+        function updateSideMenu() {
+            var isVapc = !!(current && current.pack === 'vapc');
+            var activeSide = (current && current.pack === 'half') ? current.maskHalf : null;
+            var items = sideMenu.querySelectorAll('.mode-item');
+            for (var i = 0; i < items.length; i++) {
+                var m = items[i].getAttribute('data-side');
+                if (m === 'auto') {
+                    items[i].classList.toggle('checked', isVapc || !autoChecked);
+                } else if (m === 'nextvap') {
+                    items[i].classList.remove('checked');
+                    items[i].classList.toggle('disabled', isVapc);
+                } else {
+                    items[i].classList.toggle('checked', activeSide === m);
+                    items[i].classList.toggle('disabled', isVapc);
+                }
+            }
+        }
+
+        async function handleSidePick(side) {
+            if (side === 'auto') { await setViewMode('auto'); return; }
+            // vapc 元数据是唯一解，不接受手动覆盖
+            if (current && current.pack === 'vapc') return;
+
+            if (side === 'nextvap') {
+                if (!candidates.length) return;
+                var idx = current ? candidates.indexOf(current) : -1;
+                var next = candidates[(idx + 1 + candidates.length) % candidates.length];
+                autoChecked = true;
+                autoNote = T('AUTO_Skipped');
+                logicalFor(next).then(function (lg) { return applyPacking(next, lg); }).then(function() {
+                    showToast(packLabel(next) + ' · ' + sideLabel(next));
+                    updateInfo();
+                    if (metaPinned) updateMetaPanel();
+                });
+                return;
+            }
+
+            var cand = null;
+            for (var i = 0; i < candidates.length; i++) {
+                var c = candidates[i];
+                if (c.pack === 'half' && c.maskHalf === side) { cand = c; break; }
+            }
+            if (!cand) return;
             autoChecked = true;
             autoNote = T('AUTO_Skipped');
-            logicalFor(next).then(function (lg) { return applyPacking(next, lg); }).then(function() {
-                showToast(packLabel(next) + ' · ' + sideLabel(next));
-                updateInfo();
-                if (metaPinned) updateMetaPanel();
-            });
+            var lg = await logicalFor(cand);
+            await applyPacking(cand, lg);
+            showToast(packLabel(cand) + ' · ' + sideLabel(cand));
+            updateInfo();
+            if (metaPinned) updateMetaPanel();
+        }
+
+        btnFlip.addEventListener('click', function(e) {
+            e.stopPropagation();
+            setModeMenu(false);
+            setSideMenu(!sideMenuOpen);
+        });
+        sideMenu.addEventListener('click', function(e) {
+            var item = e.target.closest('.mode-item');
+            if (!item || item.classList.contains('disabled')) return;
+            setSideMenu(false);
+            handleSidePick(item.getAttribute('data-side'));
         });
 
         // --- Background switcher ---
@@ -1073,6 +1159,7 @@
             volumeLayer.classList.remove('show');
             colorPicker.classList.remove('show');
             setModeMenu(false);
+            setSideMenu(false);
             metaPanel.classList.remove('show');
         }
         function resetHideTimer() {
@@ -1097,7 +1184,8 @@
 
         function updateInfo() {
             infoEl.textContent = (viewMode === 'video' ? T('MODE_Video')
-                : visibleSize() + ' \u00b7 ' + packLabel(current) + ' \u00b7 ' + sideLabel(current));
+                : visibleSize() + ' · ' + packLabel(current) + ' · ' + sideLabel(current));
+            updateSideMenu();
         }
 
         // --- Volume ---
@@ -1290,6 +1378,7 @@
                 duration = 0;
                 stage.classList.remove('plain');
                 setModeMenu(false);
+                setSideMenu(false);
                 updateModeBtn();
 
                 if (compositor) { try { compositor.destroy(); } catch (e) { } compositor = null; }

@@ -15,6 +15,7 @@
 
 ### Changed
 - Preview-mode control is now a dropdown list (expand icon on the toolbar): **Auto** (default, pixel self-check decides) / **Alpha compositing** / **Plain video**, replacing the binary toggle; picking Auto re-runs the detection pass
+- Alpha-side control is now a dropdown too: **Auto detect** (default) / manual half-split side (left/right/top/bottom) / next quarter-mask candidate, replacing the one-by-one flip cycling; with vapc metadata the manual items are disabled
 - Flattened `Samples/external/` into a single `Samples/` and trimmed to the native demos shipped by their official repos (AlphaPlayer ×2, Tencent VAP `vap_demo`, YYEVA ×3); VAP-quadrant regression now keys off the native `vap_demo.mp4`
 
 ### Fixed

@@ -62,8 +62,9 @@ Plugin.cs (IViewer)
 - `runAutoDetect` samples several frames, scores each candidate by alpha purity × content
   colorfulness × region alignment, and applies the best; if the composited frame is ~empty
   it falls back to plain video. Skipped entirely when host vapc metadata is present.
-- Manual flip cycles candidates; with vapc the candidate list is a single element (metadata is
-  the one solution), so flipping is a no-op.
+- Alpha-side control is a dropdown (toolbar expand icon): **Auto detect** (default, re-runs
+  `runAutoDetect`) / manual half-split side (left/right/top/bottom) / next quarter-mask
+  candidate. With vapc the manual items are disabled — metadata is the one solution.
 - Preview mode is a dropdown (toolbar expand icon): Auto (default, `runAutoDetect` decides) /
   Alpha / Plain video. `runAutoDetect` early-returns when `viewMode !== 'auto'`; picking Auto
   resets `viewMode` to `auto` and re-runs detection.
