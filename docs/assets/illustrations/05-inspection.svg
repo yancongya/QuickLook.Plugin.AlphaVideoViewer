@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1068 720" role="img" aria-labelledby="title desc" data-run="paused">
+<title id="title">切换背景，并展开文件信息面板查看合成细节</title><desc id="desc">AlphaVideoViewer 功能示意；分层 SVG 绘制的播放器界面与信息面板，不是 Windows 实测截图。</desc>
+<defs>
+<linearGradient id="page" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0a0a0a"/><stop offset=".55" stop-color="#141414"/><stop offset="1" stop-color="#0a0a0a"/></linearGradient>
+<linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#1e1e1e"/><stop offset="1" stop-color="#191919"/></linearGradient>
+<linearGradient id="art" x1=".12" y1="0" x2=".88" y2="1"><stop stop-color="#c9c9c9"/><stop offset=".38" stop-color="#e8e8e8"/><stop offset=".72" stop-color="#d8d8d8"/><stop offset="1" stop-color="#e8e8e8"/></linearGradient>
+<radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop stop-color="#e8e8e8" stop-opacity=".24"/><stop offset="1" stop-color="#e8e8e8" stop-opacity="0"/></radialGradient>
+<pattern id="checker" width="24" height="24" patternUnits="userSpaceOnUse"><rect width="24" height="24" fill="#1e1e1e"/><path d="M0 0H12V12H0ZM12 12H24V24H12Z" fill="#191919"/></pattern>
+<pattern id="checkerLight" width="16" height="16" patternUnits="userSpaceOnUse"><rect width="16" height="16" fill="#ffffff"/><path d="M0 0H8V8H0ZM8 8H16V16H8Z" fill="#e4e4e4"/></pattern>
+<filter id="shadow" x="-30%" y="-30%" width="170%" height="180%"><feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity=".55"/></filter>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#000000" flood-opacity=".45"/></filter>
+<symbol id="gift" viewBox="0 0 100 100">
+  <path d="M50 90C21 69 5 52 5 33 5 18.5 16 8 30 8c8.7 0 16.5 4.4 20 11.2C53.5 12.4 61.3 8 70 8 84 8 95 18.5 95 33c0 19-16 36-45 57Z" fill="url(#art)"/>
+  <ellipse cx="31" cy="29" rx="11" ry="7" transform="rotate(-32 31 29)" fill="#ffffff" opacity=".3"/>
+  <path d="M50 90C21 69 5 52 5 33 5 18.5 16 8 30 8c8.7 0 16.5 4.4 20 11.2C53.5 12.4 61.3 8 70 8 84 8 95 18.5 95 33c0 19-16 36-45 57Z" fill="none" stroke="#c9c9c9" stroke-opacity=".5" stroke-width="1.3"/>
+</symbol>
+<symbol id="icInfo" viewBox="0 0 30 30"><circle cx="15" cy="15" r="6.4" fill="none" stroke="#9c9c9c" stroke-width="1.6"/><circle cx="15" cy="11.2" r="1" fill="#9c9c9c"/><path d="M15 13.8v4.6" stroke="#9c9c9c" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="icFlip" viewBox="0 0 30 30"><rect x="4.5" y="12" width="8" height="14" rx="2" fill="none" stroke="#9c9c9c" stroke-width="1.5"/><rect x="17.5" y="12" width="8" height="14" rx="2" fill="#e8e8e8" fill-opacity=".5" stroke="#e8e8e8" stroke-width="1.4"/><path d="M8.5 8.5h13M19.4 5.8 21.8 8.5l-2.4 2.7" fill="none" stroke="#e8e8e8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="icMode" viewBox="0 0 30 30"><circle cx="15" cy="15" r="7.6" fill="none" stroke="#9c9c9c" stroke-width="1.5"/><path d="M15 7.4a7.6 7.6 0 0 0 0 15.2Z" fill="#e8e8e8" fill-opacity=".7"/></symbol>
+<symbol id="icBg" viewBox="0 0 30 30"><rect x="5.5" y="5.5" width="19" height="19" rx="3" fill="none" stroke="#9c9c9c" stroke-width="1.4"/><path d="M5.5 15H15V5.5ZM15 15h9.5v9.5H15Z" fill="#3a3a3a"/></symbol>
+</defs><style>
+text{font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.hd{font-size:20px;fill:#efefef}.t1{font-size:16px;fill:#efefef}.t2{font-size:14px;fill:#9c9c9c}.t3{font-size:12.5px;fill:#7c7c7c}.bold{font-weight:600}.em{fill:#e8e8e8}.mono{font-family:Consolas,monospace}
+:root:not([data-run="playing"]) *{animation-play-state:paused!important}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+
+.panel{animation:panel 8s infinite}
+@keyframes panel{0%,10%{opacity:.45;transform:translateX(26px)}22%,100%{opacity:1;transform:none}}
+.picker{animation:pick 8s infinite}
+@keyframes pick{0%,86%{opacity:1;transform:none}94%,100%{opacity:.25;transform:translateY(-6px)}}
+.bgbtn{animation:bgbtn 8s infinite}
+@keyframes bgbtn{0%,86%{fill:#262626;stroke:#e8e8e8}96%,100%{fill:#1f1f1f;stroke:#2e2e2e}}
+.bgicon{animation:bgicon 8s infinite}
+@keyframes bgicon{0%,86%{opacity:1}96%,100%{opacity:.55}}
+.gift{transform-origin:352px 362px;animation:beat 8s ease-in-out infinite}
+@keyframes beat{0%,36%{transform:scale(1)}44%{transform:scale(1.05)}52%{transform:scale(1)}60%{transform:scale(1.035)}68%,100%{transform:scale(1)}}
+.cursor{animation:pointer 8s infinite}
+@keyframes pointer{0%{transform:translate(-40px,44px);opacity:0}6%{opacity:1}14%,84%{transform:none;opacity:1}94%,100%{transform:translate(-40px,44px);opacity:0}}
+.ring{animation:ring 8s infinite}
+@keyframes ring{0%,86%{opacity:1}96%,100%{opacity:0}}
+</style>
+<rect x="0" y="0" width="1068" height="720" fill="url(#page)"/>
+<ellipse cx="330" cy="360" rx="360" ry="320" fill="url(#glow)" opacity=".8"/>
+<g filter="url(#shadow)">
+<rect x="40" y="84" width="624" height="576" rx="13" fill="#121212" stroke="#2e2e2e"/>
+<path d="M40 97a13 13 0 0 1 13-13h598a13 13 0 0 1 13 13v31H40Z" fill="url(#bar)"/>
+<path d="M40 128H664" stroke="#2a2a2a"/>
+<text x="62" y="113" class="t2">gift_heartbeat.mp4 · QuickLook</text>
+<path d="M596 110h12" stroke="#9c9c9c" stroke-width="1.6" stroke-linecap="round"/>
+<rect x="618" y="102" width="11" height="11" rx="1.6" fill="none" stroke="#9c9c9c" stroke-width="1.5"/>
+<path d="M640 102l11 11M651 102l-11 11" stroke="#9c9c9c" stroke-width="1.6" stroke-linecap="round"/>
+<rect x="54" y="134" width="596" height="456" rx="6" fill="url(#checker)" stroke="#282828"/>
+<ellipse cx="352" cy="360" rx="140" ry="132" fill="url(#glow)"/>
+<g class="gift"><use href="#gift" x="252" y="262" width="200" height="200"/></g>
+<text x="70" y="574" class="t3">棋盘格即透明区域 · 400% 放大可查边缘</text>
+<g>
+<rect x="504" y="142" width="30" height="30" rx="7" fill="#1f1f1f" stroke="#2e2e2e"/><use href="#icInfo" x="504" y="142" width="30" height="30"/>
+<rect x="540" y="142" width="30" height="30" rx="7" fill="#1f1f1f" stroke="#2e2e2e"/><use href="#icFlip" x="540" y="142" width="30" height="30"/>
+<rect x="576" y="142" width="30" height="30" rx="7" fill="#1f1f1f" stroke="#2e2e2e"/><use href="#icMode" x="576" y="142" width="30" height="30"/>
+<rect class="bgbtn" x="612" y="142" width="30" height="30" rx="7" fill="#262626" stroke="#e8e8e8"/>
+<g class="bgicon"><use href="#icBg" x="612" y="142" width="30" height="30"/></g>
+</g>
+<g class="picker" filter="url(#soft)">
+<rect x="496" y="180" width="148" height="104" rx="8" fill="#1c1c1c" stroke="#2e2e2e"/>
+<text x="509" y="197" class="t3" style="fill:#9c9c9c">背景</text>
+<rect x="509" y="206" width="26" height="26" rx="3" fill="#202020" stroke="#414141"/>
+<rect x="541" y="206" width="26" height="26" rx="3" fill="url(#checkerLight)" stroke="#e8e8e8" stroke-width="2"/>
+<rect x="573" y="206" width="26" height="26" rx="3" fill="#ffffff" stroke="#414141"/>
+<rect x="605" y="206" width="26" height="26" rx="3" fill="#000000" stroke="#414141"/>
+<rect x="509" y="240" width="122" height="30" rx="5" fill="#d8d8d8" stroke="#414141"/>
+<circle cx="524" cy="255" r="6" fill="#0a0a0a" opacity=".55"/>
+<text x="538" y="260" class="t3" style="fill:#191919">自定义颜色</text>
+</g>
+<g class="ring"><rect x="607" y="137" width="40" height="40" rx="10" fill="none" stroke="#e8e8e8" stroke-width="2" opacity="0"/></g>
+<rect x="54" y="596" width="596" height="50" rx="8" fill="#181818" stroke="#282828"/>
+<path d="M76 610v16M84 610v16" stroke="#efefef" stroke-width="3" stroke-linecap="round"/>
+<path d="M118 610a7 7 0 1 1 0 10M116 608v6h6" fill="none" stroke="#9c9c9c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="138" y="619" width="330" height="4" rx="2" fill="#2e2e2e"/>
+<rect x="138" y="619" width="132" height="4" rx="2" fill="#e8e8e8"/>
+<circle cx="272" cy="621" r="5.5" fill="#efefef"/>
+<text x="482" y="626" class="t3" style="fill:#9c9c9c">00:02 / 00:06</text>
+<path d="M594 613h5l6-5v18l-6-5h-5z" fill="none" stroke="#9c9c9c" stroke-width="1.7" stroke-linejoin="round"/>
+<path d="M609 612q6 5 0 10" fill="none" stroke="#9c9c9c" stroke-width="1.5" stroke-linecap="round"/>
+</g>
+<g class="panel" filter="url(#shadow)">
+<rect x="692" y="84" width="328" height="452" rx="12" fill="#141414" stroke="#2e2e2e"/>
+<rect x="692" y="84" width="328" height="46" rx="12" fill="url(#bar)"/>
+<rect x="692" y="112" width="328" height="18" fill="#1e1e1e"/>
+<text x="714" y="114" class="t2 bold">文件信息</text>
+<path d="M692 130H1020" stroke="#2a2a2a"/>
+<text x="714" y="160" class="t3 mono">gift_heartbeat.mp4</text>
+<path d="M714 176H996" stroke="#232323"/>
+<text x="714" y="206" class="t3">显示尺寸</text>
+<text x="996" y="206" class="t1 mono" text-anchor="end">420 × 1167</text>
+<text x="714" y="250" class="t3">源视频</text>
+<text x="996" y="250" class="t1 mono" text-anchor="end">840 × 1167</text>
+<text x="714" y="294" class="t3">拼接方式</text>
+<text x="996" y="294" class="t1" text-anchor="end">半幅拼接 · 左/右</text>
+<text x="714" y="338" class="t3">Alpha 位置</text>
+<text x="996" y="338" class="t1" text-anchor="end">左</text>
+<text x="714" y="382" class="t3">预览模式</text>
+<text x="996" y="382" class="t1" text-anchor="end">透明合成</text>
+<text x="714" y="426" class="t3">自检</text>
+<circle cx="722" cy="422" r="4" fill="#e8e8e8"/>
+<text x="996" y="426" class="t1 em" text-anchor="end">已确认拼接</text>
+<text x="714" y="470" class="t3">时长</text>
+<text x="996" y="470" class="t1 mono" text-anchor="end">6.00s</text>
+<rect x="714" y="492" width="282" height="32" rx="8" fill="#212121" stroke="#333333"/>
+<text x="855" y="513" class="t3" text-anchor="middle" style="fill:#dcdcdc">合成器：WebGL · rgb × alpha 预乘</text>
+</g>
+<g filter="url(#soft)">
+<rect x="692" y="556" width="328" height="104" rx="12" fill="#101010" stroke="#2e2e2e"/>
+<text x="714" y="584" class="t2 bold">预览操作</text>
+<text x="714" y="610" class="t3">Ctrl + 滚轮缩放　·　拖拽平移</text>
+<text x="714" y="634" class="t3">双击复位　·　进度条可拖拽定位</text>
+</g>
+<g class="cursor"><g transform="translate(640,150)"><path d="M3 1V29L10 23L16 34L21 31L15 20H25Z" fill="#efefef" stroke="#0a0a0a" stroke-width="2" stroke-linejoin="round"/></g></g>
+</svg>
