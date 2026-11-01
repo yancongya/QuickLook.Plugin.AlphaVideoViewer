@@ -337,7 +337,7 @@ key.addEventListener('pointerup',e=>release('pointer',e.pointerId));
 window.addEventListener('pointerup',e=>release('pointer',e.pointerId));
 key.addEventListener('pointercancel',cancelHold);
 key.addEventListener('lostpointercapture',()=>{if(held==='pointer')cancelHold()});
-key.addEventListener('click',e=>{e.preventDefault()});
+key.addEventListener('click',e=>{e.preventDefault();if(e.detail===0&&!held){press('keyboard');release('keyboard')}});
 window.addEventListener('keydown',e=>{
  if(e.code!=='Space'||e.repeat||e.altKey||e.ctrlKey||e.metaKey)return;
  const ae=document.activeElement;

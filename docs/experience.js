@@ -58,7 +58,7 @@ const panelMarkup = {
     '<button type="button" data-bg="checker" aria-pressed="true" aria-label="棋盘格背景" title="棋盘格"><i class="swatch-checker"></i></button><button type="button" data-bg="black" aria-pressed="false" aria-label="黑色背景" title="黑色"><i class="swatch-black"></i></button><button type="button" data-bg="white" aria-pressed="false" aria-label="白色背景" title="白色"><i class="swatch-white"></i></button><label class="inspect-color" title="自定义背景颜色"><input type="color" data-bg-color value="#6f6f6f" aria-label="自定义预览背景颜色"></label></div>',
     '<label class="inspect-zoom"><span>ZOOM <output data-zoom-output>100%</output></span><input type="range" min="75" max="220" value="100" data-zoom aria-label="缩放预览画面"></label>',
     '<button class="inspect-info-toggle" type="button" data-action="info" aria-pressed="false">INFO</button><button class="inspect-reset" type="button" data-action="reset" title="复位缩放与平移" aria-label="复位缩放与平移">↺</button></div>',
-    '<p class="inspect-status" data-live aria-live="polite">拖动查看细节 · Ctrl + 滚轮缩放 · 双击复位</p>',
+    '<p class="inspect-status" data-live aria-live="polite">拖动或方向键平移 · Ctrl + 滚轮缩放 · Home / 双击复位</p>',
     '</div>'
   ].join('')
 };
@@ -303,7 +303,9 @@ export function initExperiences({ reducedMotion = false } = {}) {
       setMessage(root, '先选中文件，QuickLook 才会响应空格', 'Select a file before opening QuickLook with Space.');
       return;
     }
+    const restoreFocus = !shouldOpen && preview.contains(document.activeElement);
     preview.hidden = !shouldOpen;
+    if (restoreFocus) root.querySelector('.xp-file').focus();
     root.dataset.demoState = shouldOpen ? 'open' : 'selected';
     root.querySelector('[data-action="space"]').setAttribute('aria-pressed', String(shouldOpen));
     root.querySelector('[data-space-label]').textContent = shouldOpen ? (english ? 'Close preview' : '关闭预览') : (english ? 'Open preview' : '打开预览');
@@ -391,6 +393,14 @@ export function initExperiences({ reducedMotion = false } = {}) {
         art.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + zoom + ')';
       });
       const view = root.querySelector('[data-inspect-view]');
+      view.tabIndex = 0;
+      view.addEventListener('keydown', event => {
+        const delta = {ArrowLeft:[-16,0],ArrowRight:[16,0],ArrowUp:[0,-16],ArrowDown:[0,16]}[event.key];
+        if(event.key==='Home'){event.preventDefault();resetInspect(root);return;}
+        if(!delta)return;
+        event.preventDefault();panX+=delta[0];panY+=delta[1];
+        root.querySelector('[data-inspect-art]').style.transform='translate('+panX+'px, '+panY+'px) scale('+zoom+')';
+      });
       view.addEventListener('pointerdown', event => {
         if (event.button !== 0) return;
         drag = { root, id: event.pointerId, x: event.clientX, y: event.clientY, panX, panY };
@@ -417,6 +427,7 @@ export function initExperiences({ reducedMotion = false } = {}) {
 
   document.addEventListener('keydown', event => {
     const root=event.target.closest('[data-experience="space"]');
+    if(root && event.key==='Escape' && root.dataset.demoState==='open'){event.preventDefault();togglePreview(root,false);return;}
     if(!root || event.code!=='Space' || !event.target.matches('.xp-file')) return;
     event.preventDefault();
     if(!event.repeat) togglePreview(root,root.dataset.demoState!=='open');
@@ -534,7 +545,7 @@ export function initExperiences({ reducedMotion = false } = {}) {
           root.querySelector('[data-space-label]').textContent = open ? (english ? 'Close preview' : '关闭预览') : (english ? 'Open preview' : '打开预览');
           setMessage(root, open ? 'QuickLook 预览已打开；再次按空格或关闭按钮收回' : selected ? '文件已选中，现在按下方 Space 打开预览' : '先选中视频文件', open ? 'QuickLook preview is open. Press Space again or close it.' : selected ? 'File selected. Press Space below to open the preview.' : 'Select the video file first.');
         }
-        if (root.dataset.experience === 'inspect') setMessage(root, '拖动查看细节 · Ctrl + 滚轮缩放 · 双击复位', 'Drag to inspect · Ctrl + wheel to zoom · double-click to reset');
+        if (root.dataset.experience === 'inspect') setMessage(root, '拖动或方向键平移 · Ctrl + 滚轮缩放 · Home / 双击复位', 'Drag or arrow keys to pan · Ctrl + wheel to zoom · Home / double-click to reset');
       });
       roots.forEach(root=>localizeExperience(root,english));
       if (lab) { setLabStatus(); localizeExperience(lab,english); }
