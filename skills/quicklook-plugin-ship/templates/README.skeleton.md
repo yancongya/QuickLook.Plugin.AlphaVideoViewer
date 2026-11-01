@@ -1,3 +1,4 @@
+<!-- 先选择 WebView2 播放器 / 原生 WPF 管理路线。下列功能只保留源码已证明的项。Manager 不需要 WebView2；入口是数据目录，.qlplugin 交官方安装器。 -->
 # QuickLook.Plugin.{FormatName}
 
 [English](#english) | 中文
@@ -33,7 +34,7 @@
 
 - Windows 10/11
 - [QuickLook](https://github.com/QL-Win/QuickLook) 4.x
-- [WebView2 Runtime](https://developer.microsoft.com/zh-cn/microsoft-edge/webview2/)（Windows 10/11 通常已预装）
+- [WebView2 Runtime](https://developer.microsoft.com/zh-cn/microsoft-edge/webview2/)（仅 WebView2 路线；检查实际安装状态）
 
 ### 从源码构建
 

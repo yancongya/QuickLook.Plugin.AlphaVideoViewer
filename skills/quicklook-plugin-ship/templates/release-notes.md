@@ -1,3 +1,4 @@
+<!-- 先选择 WebView2 播放器 / 原生 WPF 管理路线。下列功能只保留源码已证明的项。Manager 不需要 WebView2；入口是数据目录，.qlplugin 交官方安装器。 -->
 ## What's New
 
 ### v{version} ({date})
@@ -22,4 +23,4 @@ Initial release of {FormatName} plugin for QuickLook.
 #### Requirements
 - Windows 10/11
 - QuickLook 4.x
-- WebView2 Runtime (usually pre-installed)
+- {Actual runtime requirement: WebView2 for web players; native WPF for PluginManager}

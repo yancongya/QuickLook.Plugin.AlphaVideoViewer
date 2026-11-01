@@ -1,5 +1,8 @@
 # QuickLook.Plugin.AlphaVideoViewer
 
+> 落地页源码 / Landing source: [docs/index.html](docs/index.html)。公开地址为 https://yancongya.github.io/QuickLook.Plugin.AlphaVideoViewer/ ；当前部署结果需单独核对 Pages（插件构建成功不代表页面发布成功）。
+
+
 > 同系列插件 / More plugins: [SvgaViewer](https://github.com/yancongya/QuickLook.Plugin.SvgaViewer) · [PagViewer](https://github.com/yancongya/QuickLook.Plugin.PagViewer) · [PluginManager](https://github.com/yancongya/QuickLook.Plugin.PluginManager)
 
 [中文](#中文) | [English](#english)
