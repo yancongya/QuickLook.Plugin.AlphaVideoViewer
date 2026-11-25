@@ -38,7 +38,7 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
         private const double ContentGrayMax = 0.70;
         private const double ContentChromaMin = 16.0;
 
-        private static readonly double[] SeekFractions = { 0.10, 0.45, 0.80 };
+        private static readonly double[] SeekFractions = { 0.10, 0.30, 0.50, 0.70, 0.88 };
         private const int SequentialLimit = 24;
         private const long MaxTime100ns = 36_000L * 10_000_000L; // 1 小时上限
 
@@ -62,19 +62,31 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
         private static bool _mfTried;
 
         // 按路径缓存解码自检结论，避免同一文件反复预览时重复解码；Unknown 不缓存（环境可能恢复）
-        private sealed class CacheEntry { public SplitCheck Result; public DateTime At; }
+        private sealed class CacheEntry { public SplitCheck Result; public long FileLength; public DateTime LastWriteTimeUtc; public DateTime At; }
         private static readonly ConcurrentDictionary<string, CacheEntry> Cache = new ConcurrentDictionary<string, CacheEntry>();
         private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
         public static SplitCheck Check(string path, int width, int height, double durationSeconds)
         {
-            if (Cache.TryGetValue(path, out var hit) && DateTime.Now - hit.At < CacheTtl)
+            long curLen = -1;
+            DateTime curWrite = DateTime.MinValue;
+            try
+            {
+                var fi = new System.IO.FileInfo(path);
+                if (fi.Exists) { curLen = fi.Length; curWrite = fi.LastWriteTimeUtc; }
+            }
+            catch { }
+
+            if (Cache.TryGetValue(path, out var hit) &&
+                DateTime.Now - hit.At < CacheTtl &&
+                hit.FileLength == curLen &&
+                hit.LastWriteTimeUtc == curWrite)
                 return hit.Result;
 
             string diag;
             var result = Check(path, width, height, durationSeconds, out diag);
             if (result != SplitCheck.Unknown)
-                Cache[path] = new CacheEntry { Result = result, At = DateTime.Now };
+                Cache[path] = new CacheEntry { Result = result, FileLength = curLen, LastWriteTimeUtc = curWrite, At = DateTime.Now };
             return result;
         }
 
@@ -143,11 +155,19 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
                         long t = (long)(durationSeconds * frac * 10_000_000.0);
                         if (t <= 0 || t > MaxTime100ns) continue;
                         if (Seek(reader, t) < 0) continue;
-                        var frame = ReadAndClassify(reader, width, height);
+                        FrameResult frame = FrameResult.None;
+                        string fDiag = null;
+                        for (int step = 0; step < 12; step++)
+                        {
+                            frame = ReadAndClassify(reader, width, height, out fDiag);
+                            if (frame == FrameResult.None) break;
+                            sawAny = true;
+                            if (fDiag == null || !fDiag.Contains("fg=0/")) break;
+                        }
                         if (frame == FrameResult.None) continue;
-                        sawAny = true;
                         if (frame == FrameResult.Split) sawSplit = true;
                         else if (frame == FrameResult.ClearNoMask) sawClear = true;
+                        else if (fDiag != null) diag = fDiag;
                         if (sawSplit) break;
                     }
                 }
@@ -155,11 +175,12 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
                 {
                     for (int i = 0; i < SequentialLimit; i++)
                     {
-                        var frame = ReadAndClassify(reader, width, height);
+                        var frame = ReadAndClassify(reader, width, height, out string fDiag);
                         if (frame == FrameResult.None) break;
                         sawAny = true;
                         if (frame == FrameResult.Split) { sawSplit = true; break; }
                         if (frame == FrameResult.ClearNoMask) sawClear = true;
+                        else if (fDiag != null) diag = fDiag;
                     }
                 }
 
@@ -190,8 +211,9 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
             return Reader_SetCurrentPosition(reader, ref timeFormat, ref pos);
         }
 
-        private static FrameResult ReadAndClassify(IntPtr reader, int width, int height)
+        private static FrameResult ReadAndClassify(IntPtr reader, int width, int height, out string fDiag)
         {
+            fDiag = null;
             int hr = Reader_ReadSample(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,
                 out _, out _, out _, out IntPtr sample);
             if (hr < 0 || sample == IntPtr.Zero) return FrameResult.None;
@@ -208,7 +230,7 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
                     {
                         long need = (long)width * height * 4;
                         if (curLen < need) return FrameResult.None; // 解码尺寸与容器不符
-                        return Classify(data, width, height);
+                        return Classify(data, width, height, out fDiag);
                     }
                     finally { Buffer_Unlock(buffer); }
                 }
@@ -217,8 +239,9 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
             finally { Marshal.Release(sample); }
         }
 
-        private static FrameResult Classify(IntPtr data, int width, int height)
+        private static FrameResult Classify(IntPtr data, int width, int height, out string fDiag)
         {
+            fDiag = null;
             var s = new FrameStats();
             int halfW = width / 2, halfH = height / 2;
             int pitch = width * 4;
@@ -233,20 +256,34 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
                     int b = Marshal.ReadByte(data, o);
                     int g = Marshal.ReadByte(data, o + 1);
                     int r = Marshal.ReadByte(data, o + 2);
-                    int spread = Math.Max(r, Math.Max(g, b)) - Math.Min(r, Math.Min(g, b));
-                    s.Add(x < halfW, top, spread);
+                    int mx = Math.Max(r, Math.Max(g, b));
+                    int mn = Math.Min(r, Math.Min(g, b));
+                    s.Add(x < halfW, top, mx - mn, mx);
                 }
             }
 
             if (AxisSplit(s.L, s.R) || AxisSplit(s.T, s.B)) return FrameResult.Split;
             bool anyMask = s.L.IsMask() || s.R.IsMask() || s.T.IsMask() || s.B.IsMask();
             if (!anyMask) return FrameResult.ClearNoMask; // 没有近灰度半 → 明确是彩色普通视频
+            fDiag = $"L(g={s.L.GrayRatio:F2},c={s.L.ChromaMean:F1},fg={s.L.FgN}/{s.L.N},fc={s.L.FgChroma:F1}) R(g={s.R.GrayRatio:F2},c={s.R.ChromaMean:F1},fg={s.R.FgN}/{s.R.N},fc={s.R.FgChroma:F1})";
             return FrameResult.Ambiguous; // 有一片灰但没找到明确的彩色另一半（单色/半黑）
         }
 
         private static bool AxisSplit(Region a, Region b)
         {
-            return (a.IsMask() && b.IsContent()) || (b.IsMask() && a.IsContent());
+            return IsMaskWithContent(a, b) || IsMaskWithContent(b, a);
+        }
+
+        private static bool IsMaskWithContent(Region mask, Region content)
+        {
+            if (!mask.IsMask()) return false;
+            if (content.IsContent()) return true;
+            // 柔和发光/浅色特效（如粉白心形）在黑底上前景彩度较低；
+            // 若遮罩高度纯灰（FgChroma <= 2.0）而另一半前景明显更彩色（>= 6.0 且差值 >= 5.0），仍确认是拼接素材。
+            return mask.GrayRatio >= 0.90 && mask.ChromaMean <= 10.0 && mask.FgChroma <= 2.0 &&
+                   content.FgN * 100 >= content.N &&
+                   content.FgChroma >= 6.0 &&
+                   content.FgChroma >= mask.FgChroma + 5.0;
         }
 
         private static bool EnsureStarted()
@@ -382,22 +419,42 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
 
         private struct Region
         {
-            public long N, Gray;
-            public double Sum;
-            public void Add(int spread) { N++; if (spread <= GraySpread) Gray++; Sum += spread; }
+            public long N, Gray, FgN, FgColor;
+            public double Sum, FgSum;
+            public void Add(int spread, int maxRgb)
+            {
+                N++;
+                if (spread <= GraySpread) Gray++;
+                Sum += spread;
+                if (maxRgb >= 16)
+                {
+                    FgN++;
+                    FgSum += spread;
+                    if (spread > GraySpread) FgColor++;
+                }
+            }
             public double GrayRatio => N == 0 ? 1.0 : (double)Gray / N;
             public double ChromaMean => N == 0 ? 255.0 : Sum / N;
+            public double FgChroma => FgN == 0 ? 0.0 : FgSum / FgN;
             public bool IsMask() => N > 0 && GrayRatio >= MaskGrayMin && ChromaMean <= MaskChromaMax;
-            public bool IsContent() => N > 0 && GrayRatio <= ContentGrayMax && ChromaMean >= ContentChromaMin;
+            public bool IsContent()
+            {
+                if (N == 0) return false;
+                if (GrayRatio <= ContentGrayMax && ChromaMean >= ContentChromaMin) return true;
+                if (FgN * 100 < N) return false;
+                double fgColorRatio = (double)FgColor / FgN;
+                double fgChroma = FgSum / FgN;
+                return fgColorRatio >= 0.25 && fgChroma >= ContentChromaMin;
+            }
         }
 
         private struct FrameStats
         {
             public Region L, R, T, B;
-            public void Add(bool left, bool top, int spread)
+            public void Add(bool left, bool top, int spread, int maxRgb)
             {
-                if (left) L.Add(spread); else R.Add(spread);
-                if (top) T.Add(spread); else B.Add(spread);
+                if (left) L.Add(spread, maxRgb); else R.Add(spread, maxRgb);
+                if (top) T.Add(spread, maxRgb); else B.Add(spread, maxRgb);
             }
         }
     }

@@ -7,7 +7,7 @@
             --bg: #202020;
             --fg: #cccccc;
             --fg-alt: #888888;
-            --accent: #76b9ed;
+            --accent: #e0e0e0;
             --control-bg: rgba(30,30,30,0.92);
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -79,7 +79,7 @@
         #topBar {
             position: absolute; top: 8px; right: 8px;
             display: flex; gap: 4px;
-            z-index: 20; opacity: 1; transition: opacity 0.3s;
+            z-index: 25; opacity: 1; transition: opacity 0.3s;
         }
         #topBar.hidden { opacity: 0; pointer-events: none; }
         #topBar .btn {
@@ -89,34 +89,110 @@
             border-radius: 2px; transition: background 0.1s;
         }
         #topBar .btn:hover { background: rgba(255,255,255,0.1); }
+        #topBar .btn.pinned {
+            background: rgba(255,255,255,0.16);
+            color: #ffffff;
+            box-shadow: inset 0 -2px 0 var(--accent);
+        }
         #topBar .btn .icon { font-size: 12px; }
 
-        /* Metadata panel */
-        #metaPanel {
-            position: absolute; top: 36px; right: 8px;
-            background: var(--control-bg);
-            padding: 8px 12px; border-radius: 4px;
-            color: var(--fg); font-size: 11px;
-            line-height: 1.6; z-index: 21;
-            display: none; max-width: 280px;
-            max-height: 300px; overflow-y: auto;
+        /* Unified Info & Performance overlay (bottom-right transparent panel) */
+        #perfOverlay {
+            position: absolute; bottom: 42px; right: 12px;
+            width: 260px; min-width: 216px; min-height: 168px;
+            background: rgba(16,16,16,0.34);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 6px; padding: 8px 10px;
+            color: var(--fg); font-size: 11px; line-height: 1.5;
+            z-index: 18; display: none;
+            flex-direction: column; gap: 6px;
+            transition: background 0.18s ease, border-color 0.18s ease;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.85);
         }
-        #metaPanel.show { display: block; }
-        #metaPanel .label { color: var(--fg-alt); }
-        #metaPanel .meta-row { display: flex; justify-content: space-between; }
-        #metaPanel .meta-row .label { flex: 0 0 auto; }
-        #metaPanel .meta-row .value { text-align: right; }
-        #metaPanel::-webkit-scrollbar { width: 4px; }
-        #metaPanel::-webkit-scrollbar-track { background: transparent; }
-        #metaPanel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
-        #metaPanel::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+        #perfOverlay.show { display: flex; }
+        #perfOverlay:hover, #perfOverlay.interacting {
+            background: rgba(16,16,16,0.58);
+            border-color: rgba(255,255,255,0.22);
+        }
+        .perf-resize {
+            position: absolute; z-index: 2;
+        }
+        .perf-resize-nw { top: -3px; left: -3px; width: 10px; height: 10px; cursor: nwse-resize; }
+        .perf-resize-w { top: 8px; bottom: 8px; left: -3px; width: 6px; cursor: ew-resize; }
+        .perf-resize-n { left: 8px; right: 8px; top: -3px; height: 6px; cursor: ns-resize; }
+
+        .perf-head {
+            display: flex; align-items: center; gap: 6px;
+            cursor: grab; user-select: none;
+            padding-bottom: 4px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .perf-head:active { cursor: grabbing; }
+        .perf-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #6cc644; flex-shrink: 0;
+            box-shadow: 0 0 4px rgba(108,198,68,0.6);
+        }
+        .perf-dot.warn { background: #e0b040; box-shadow: 0 0 4px rgba(224,176,64,0.6); }
+        .perf-dot.bad { background: #e05555; box-shadow: 0 0 4px rgba(224,85,85,0.6); }
+        .perf-dot.idle { background: #888888; box-shadow: none; }
+        .perf-title {
+            font-weight: 600; font-size: 11px; color: #f0f0f0;
+            flex: 1; white-space: nowrap;
+        }
+        .perf-copy-btn {
+            background: transparent; border: none; color: var(--fg-alt);
+            width: 20px; height: 20px; border-radius: 3px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.12s, color 0.12s;
+        }
+        .perf-copy-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+        .perf-copy-btn .icon { font-size: 11px; }
+
+        .perf-meta-grid {
+            display: grid; grid-template-columns: auto 1fr;
+            gap: 1px 10px; align-items: baseline;
+        }
+        .pm-k { color: rgba(255,255,255,0.68); white-space: nowrap; }
+        .pm-v {
+            color: #f0f0f0; text-align: right;
+            white-space: nowrap; text-overflow: ellipsis;
+        }
+
+        .perf-metrics {
+            display: grid; grid-template-columns: repeat(2, 1fr);
+            gap: 2px 8px; padding-top: 4px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            font-variant-numeric: tabular-nums;
+        }
+        .perf-metric-item { display: flex; justify-content: space-between; gap: 4px; }
+        .perf-metric-item .pm-k { font-size: 10px; }
+        .perf-metric-item .pm-v { font-size: 10.5px; font-weight: 500; }
+
+        .perf-chart-wrap {
+            position: relative; flex: 1 1 40px; min-height: 40px;
+            background: rgba(0,0,0,0.22);
+            border-radius: 4px; overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        #perfChart {
+            position: absolute; inset: 0;
+            width: 100%; height: 100%; display: block;
+        }
+        .perf-chart-tip {
+            position: absolute; top: 2px; left: 5px;
+            font-size: 10px; color: #f0f0f0; pointer-events: none;
+            font-variant-numeric: tabular-nums;
+            opacity: 0; transition: opacity 0.12s;
+        }
+        .perf-chart-tip.show { opacity: 1; }
 
         /* Color picker popup */
         #colorPicker {
             position: absolute; top: 36px; right: 8px;
             background: var(--control-bg);
             padding: 8px; border-radius: 4px;
-            display: none; z-index: 21;
+            display: none; z-index: 28;
             flex-direction: column; gap: 6px;
         }
         #colorPicker.show { display: flex; }
@@ -134,10 +210,10 @@
         /* Dropdown menus (mode / alpha side) */
         .dropMenu {
             position: absolute; top: 36px; right: 8px;
-            min-width: 128px;
+            min-width: 138px;
             background: var(--control-bg);
             padding: 4px 0; border-radius: 4px;
-            display: none; z-index: 21;
+            display: none; z-index: 28;
         }
         .dropMenu.show { display: block; }
         .dropMenu .mode-head {
@@ -164,24 +240,29 @@
             position: absolute; bottom: 0; left: 0; right: 0;
             height: 32px; background: var(--control-bg);
             display: flex; align-items: center; padding: 0 8px;
-            opacity: 1; transition: opacity 0.3s ease; z-index: 10;
+            opacity: 1; transition: opacity 0.3s ease; z-index: 25;
         }
         #controls.hidden { opacity: 0; pointer-events: none; }
 
         .btn {
             background: transparent; border: none; color: var(--fg);
-            width: 32px; height: 32px; cursor: pointer;
+            width: 30px; height: 30px; cursor: pointer;
             display: flex; align-items: center; justify-content: center;
             border-radius: 4px; transition: all 0.15s; flex-shrink: 0;
             position: relative;
         }
         .btn:hover { background: rgba(255,255,255,0.1); }
         .btn:active { background: rgba(255,255,255,0.15); }
-        .btn.active { color: var(--accent); }
+        .btn.active { color: #ffffff; }
         .btn.pinned {
-            background: rgba(118,185,237,0.3);
-            color: var(--accent);
+            background: rgba(255,255,255,0.16);
+            color: #ffffff;
             box-shadow: inset 0 -2px 0 var(--accent);
+        }
+        #btnSpeed {
+            width: auto; min-width: 34px; padding: 0 6px;
+            font-size: 11px; font-weight: 500;
+            font-variant-numeric: tabular-nums;
         }
 
         /* Progress bar */
@@ -227,7 +308,7 @@
             background: var(--control-bg);
             display: flex; align-items: center; justify-content: center;
             opacity: 0; pointer-events: none;
-            transition: opacity 0.15s; z-index: 11;
+            transition: opacity 0.15s; z-index: 26;
         }
         #volumeLayer.show { opacity: 1; pointer-events: auto; }
         #volumeSlider {
@@ -247,16 +328,6 @@
             color: var(--fg-alt); font-size: 13px; z-index: 2;
         }
 
-        #info {
-            position: absolute; top: 8px; left: 8px;
-            color: var(--fg-alt); font-size: 11px;
-            font-family: 'Segoe UI', sans-serif;
-            pointer-events: none; opacity: 0;
-            transition: opacity 0.3s; z-index: 2;
-            line-height: 1.4;
-        }
-        #info.show { opacity: 1; }
-
         /* Toast notification */
         #toast {
             position: absolute; bottom: 44px; left: 50%;
@@ -273,15 +344,14 @@
     <div id="container">
         <div id="bgLayer" class="default"></div>
         <div id="canvasWrap">
-            <video id="srcVideo" muted playsinline></video>
+            <video id="srcVideo" crossorigin="anonymous" muted playsinline></video>
         </div>
         <div id="zoomInfo"></div>
-        <div id="info"></div>
         <div id="toast"></div>
 
         <!-- Top-right toolbar -->
         <div id="topBar">
-            <button class="btn" id="btnMeta" title="文件信息">
+            <button class="btn" id="btnMeta" title="信息与性能">
                 <span class="icon">&#xE946;</span>
             </button>
             <button class="btn" id="btnFlip" title="切换拼接方式">
@@ -290,6 +360,9 @@
             <button class="btn" id="btnMode" title="预览模式">
                 <span class="icon">&#xE70D;</span>
             </button>
+            <button class="btn" id="btnSave" title="保存当前帧为 PNG">
+                <span class="icon">&#xE74E;</span>
+            </button>
             <button class="btn" id="btnBg" title="切换背景">
                 <span class="icon">&#xEF1F;</span>
             </button>
@@ -297,6 +370,7 @@
         <div id="modeMenu" class="dropMenu">
             <div class="mode-item" data-mode="auto"><span class="mi-label">自动</span><span class="mi-check">&#xE73E;</span></div>
             <div class="mode-item" data-mode="alpha"><span class="mi-label">透明合成</span><span class="mi-check">&#xE73E;</span></div>
+            <div class="mode-item" data-mode="alphaOnly"><span class="mi-label">仅 Alpha 遮罩</span><span class="mi-check">&#xE73E;</span></div>
             <div class="mode-item" data-mode="video"><span class="mi-label">普通视频</span><span class="mi-check">&#xE73E;</span></div>
         </div>
         <div id="sideMenu" class="dropMenu">
@@ -309,7 +383,32 @@
             <div class="mode-item" data-side="bottom"><span class="mi-label">下</span><span class="mi-check">&#xE73E;</span></div>
             <div class="mode-item" data-side="nextvap"><span class="mi-label">下一个四分幅候选</span><span class="mi-check">&#xE73E;</span></div>
         </div>
-        <div id="metaPanel"></div>
+
+        <!-- Unified bottom-right Info & Performance overlay -->
+        <div id="perfOverlay">
+            <div class="perf-resize perf-resize-nw" data-edge="nw"></div>
+            <div class="perf-resize perf-resize-w" data-edge="w"></div>
+            <div class="perf-resize perf-resize-n" data-edge="n"></div>
+            <div class="perf-head" id="perfHead">
+                <span class="perf-dot idle" id="perfDot"></span>
+                <span class="perf-title" id="perfTitle">信息与性能</span>
+                <button class="perf-copy-btn" id="btnCopyMeta" title="复制信息摘要">
+                    <span class="icon">&#xE8C8;</span>
+                </button>
+            </div>
+            <div class="perf-meta-grid" id="perfMetaGrid"></div>
+            <div class="perf-metrics" id="perfMetrics">
+                <div class="perf-metric-item"><span class="pm-k" id="lblFps">帧率</span><span class="pm-v" id="valFps">-</span></div>
+                <div class="perf-metric-item"><span class="pm-k" id="lblFrameTime">帧耗时</span><span class="pm-v" id="valFrameTime">-</span></div>
+                <div class="perf-metric-item"><span class="pm-k" id="lblAvg">均值</span><span class="pm-v" id="valAvg">-</span></div>
+                <div class="perf-metric-item"><span class="pm-k" id="lblMinMax">最小/最大</span><span class="pm-v" id="valMinMax">-</span></div>
+            </div>
+            <div class="perf-chart-wrap" id="perfChartWrap">
+                <canvas id="perfChart"></canvas>
+                <div class="perf-chart-tip" id="perfChartTip"></div>
+            </div>
+        </div>
+
         <div id="colorPicker">
             <div class="colorSwatches">
                 <div class="swatch" data-bg="default" style="background:var(--bg)" title="默认"></div>
@@ -321,12 +420,19 @@
         </div>
 
         <div id="controls">
+            <button class="btn" id="btnPrevFrame" title="上一帧">
+                <span class="icon">&#xE892;</span>
+            </button>
             <button class="btn" id="btnPlayPause" title="播放 / 暂停">
                 <span class="icon">&#xE768;</span>
+            </button>
+            <button class="btn" id="btnNextFrame" title="下一帧">
+                <span class="icon">&#xE893;</span>
             </button>
             <button class="btn active" id="btnLoop" title="循环">
                 <span class="icon">&#xE777;</span>
             </button>
+            <button class="btn" id="btnSpeed" title="倍速">1x</button>
             <div id="progressWrap">
                 <div id="progressBg"></div>
                 <div id="progressFill"></div>
@@ -347,12 +453,16 @@
     (function() {
         // --- i18n: read from C# Translations.config ---
         var _defaultT = {
-            'BTN_PlayPause': {zh:'播放 / 暂停',en:'Play / Pause'},
+            'BTN_PlayPause': {zh:'播放 / 暂停 (Space)',en:'Play / Pause (Space)'},
+            'BTN_PrevFrame': {zh:'上一帧 (←)',en:'Previous frame (←)'},
+            'BTN_NextFrame': {zh:'下一帧 (→)',en:'Next frame (→)'},
             'BTN_Loop': {zh:'循环',en:'Loop'},
             'BTN_Volume': {zh:'音量',en:'Volume'},
-            'BTN_Meta': {zh:'文件信息',en:'Info'},
+            'BTN_Meta': {zh:'信息与性能',en:'Info & Performance'},
             'BTN_Flip': {zh:'切换拼接方式',en:'Change packing'},
-            'BTN_Mode': {zh:'切换预览模式',en:'Change preview mode'},
+            'BTN_Mode': {zh:'切换预览模式',en:'Preview mode'},
+            'BTN_Save': {zh:'保存当前帧为 PNG (Ctrl+C 复制)',en:'Save current frame as PNG (Ctrl+C copy)'},
+            'BTN_CopyMeta': {zh:'复制信息摘要',en:'Copy summary'},
             'BTN_Background': {zh:'切换背景',en:'Background'},
             'BG_Default': {zh:'默认',en:'Default'},
             'BG_Checker': {zh:'棋盘格',en:'Checkerboard'},
@@ -365,30 +475,42 @@
             'STATUS_Error': {zh:'错误',en:'Error'},
             'META_Display': {zh:'显示尺寸',en:'Display'},
             'META_Source': {zh:'源视频',en:'Source'},
+            'META_FileSize': {zh:'文件大小',en:'File size'},
             'META_Layout': {zh:'拼接方式',en:'Layout'},
             'META_AlphaSide': {zh:'Alpha 位置',en:'Alpha side'},
             'META_Duration': {zh:'时长',en:'Duration'},
             'META_Mode': {zh:'预览模式',en:'Mode'},
             'META_Confidence': {zh:'自检',en:'Self-check'},
-            'MODE_Alpha': {zh:'透明合成',en:'Alpha'},
-            'MODE_Video': {zh:'普通视频',en:'Plain video'},
+            'META_Vapx': {zh:'VAPX 融合',en:'VAPX'},
             'MODE_Auto': {zh:'自动',en:'Auto'},
+            'MODE_Alpha': {zh:'透明合成',en:'Alpha'},
+            'MODE_AlphaOnly': {zh:'仅 Alpha 遮罩',en:'Alpha mask only'},
+            'MODE_Video': {zh:'普通视频',en:'Plain video'},
             'PACK_Half': {zh:'半幅拼接',en:'Half'},
             'PACK_Vap': {zh:'四分幅拼接',en:'Quarter mask'},
             'PACK_Vapc': {zh:'VAP 元数据',en:'VAP metadata'},
-            'AUTO_Confirmed': {zh:'已确认拼接',en:'split confirmed'},
+            'AUTO_Confirmed': {zh:'已确认拼接',en:'Split confirmed'},
             'AUTO_Metadata': {zh:'vapc 元数据（官方对位）',en:'vapc metadata (official)'},
-            'AUTO_NotSplit': {zh:'不像拼接素材，已切普通视频',en:'not a split asset, plain video'},
-            'AUTO_Failed': {zh:'未能判定，保持当前',en:'inconclusive'},
-            'AUTO_Skipped': {zh:'未判定（手动指定）',en:'not checked'},
+            'AUTO_NotSplit': {zh:'不像拼接素材，已切普通视频',en:'Not split, plain video'},
+            'AUTO_Failed': {zh:'未能判定，保持当前',en:'Inconclusive'},
+            'AUTO_Skipped': {zh:'未判定（手动指定）',en:'Not checked'},
             'SIDE_Left': {zh:'左',en:'Left'},
             'SIDE_Right': {zh:'右',en:'Right'},
             'SIDE_Top': {zh:'上',en:'Top'},
             'SIDE_Bottom': {zh:'下',en:'Bottom'},
             'SIDE_Auto': {zh:'自动识别',en:'Auto detect'},
             'SIDE_NextVap': {zh:'下一个四分幅候选',en:'Next quarter-mask candidate'},
-            'TOAST_Saved': {zh:'已保存',en:'Saved'},
-            'TOAST_Copied': {zh:'已复制',en:'Copied'}
+            'TOAST_Saved': {zh:'已保存 PNG',en:'Saved PNG'},
+            'TOAST_Copied': {zh:'已复制',en:'Copied'},
+            'TOAST_SaveFailed': {zh:'保存失败',en:'Save failed'},
+            'OPT_Speed': {zh:'倍速',en:'Speed'},
+            'PERF_Title': {zh:'信息与性能',en:'Info & Performance'},
+            'PERF_FPS': {zh:'帧率',en:'FPS'},
+            'PERF_FrameTime': {zh:'帧耗时',en:'Frame Time'},
+            'PERF_Avg': {zh:'均值',en:'Avg'},
+            'PERF_Min': {zh:'最小',en:'Min'},
+            'PERF_Max': {zh:'最大',en:'Max'},
+            'PERF_Budget': {zh:'预算',en:'Budget'}
         };
         var lang = (navigator.language || 'zh').startsWith('zh') ? 'zh' : 'en';
         var _t = _defaultT;
@@ -400,21 +522,37 @@
         var bgLayer = document.getElementById('bgLayer');
         var controls = document.getElementById('controls');
         var topBar = document.getElementById('topBar');
+        var btnPrevFrame = document.getElementById('btnPrevFrame');
         var btnPlay = document.getElementById('btnPlayPause');
+        var btnNextFrame = document.getElementById('btnNextFrame');
         var btnLoop = document.getElementById('btnLoop');
+        var btnSpeed = document.getElementById('btnSpeed');
         var btnMute = document.getElementById('btnMute');
         var btnBg = document.getElementById('btnBg');
         var btnMeta = document.getElementById('btnMeta');
         var btnFlip = document.getElementById('btnFlip');
         var btnMode = document.getElementById('btnMode');
+        var btnSave = document.getElementById('btnSave');
         var modeMenu = document.getElementById('modeMenu');
         var modeMenuOpen = false;
-        var MODE_KEYS = ['MODE_Auto', 'MODE_Alpha', 'MODE_Video'];
+        var MODE_KEYS = ['MODE_Auto', 'MODE_Alpha', 'MODE_AlphaOnly', 'MODE_Video'];
         var sideMenu = document.getElementById('sideMenu');
         var sideMenuOpen = false;
         var SIDE_KEYS = ['META_AlphaSide', 'SIDE_Auto', 'PACK_Half',
                          'SIDE_Left', 'SIDE_Right', 'SIDE_Top', 'SIDE_Bottom', 'SIDE_NextVap'];
-        var metaPanel = document.getElementById('metaPanel');
+        var perfOverlay = document.getElementById('perfOverlay');
+        var perfHead = document.getElementById('perfHead');
+        var perfDot = document.getElementById('perfDot');
+        var perfTitle = document.getElementById('perfTitle');
+        var btnCopyMeta = document.getElementById('btnCopyMeta');
+        var perfMetaGrid = document.getElementById('perfMetaGrid');
+        var perfChart = document.getElementById('perfChart');
+        var perfChartWrap = document.getElementById('perfChartWrap');
+        var perfChartTip = document.getElementById('perfChartTip');
+        var valFps = document.getElementById('valFps');
+        var valFrameTime = document.getElementById('valFrameTime');
+        var valAvg = document.getElementById('valAvg');
+        var valMinMax = document.getElementById('valMinMax');
         var colorPicker = document.getElementById('colorPicker');
         var customColor = document.getElementById('customColor');
         var volumeIcon = document.getElementById('volumeIcon');
@@ -424,32 +562,43 @@
         var progressFill = document.getElementById('progressFill');
         var progressThumb = document.getElementById('progressThumb');
         var timeEl = document.getElementById('time');
-        var infoEl = document.getElementById('info');
         var toastEl = document.getElementById('toast');
         var zoomInfoEl = document.getElementById('zoomInfo');
 
         var compositor = null, blobUrl = null;
         var isPlaying = false, isLooping = true, isDragging = false;
-        var duration = 0;
+        var duration = 0, fileSize = 0, isVapx = false;
         var hideTimer = null;
         var rawW = 0, rawH = 0;          // 探测到的 tkhd 尺寸，仅信息展示
         var vw = 0, vh = 0;              // 实际解码帧尺寸
-        // auto = 由像素自检决定合成/退回普通视频；alpha / video = 用户锁定
+        // auto = 由像素自检决定合成/退回普通视频；alpha / alphaOnly / video = 用户锁定
         var viewMode = 'auto', autoChecked = false, autoNote = '';
         // 当前生效的拼接方案
         var candidates = [], current = null, lastScores = null;
         // 宿主下发的 vapc 元数据（腾讯 VAP 官方对位坐标，已归一化）；非 null 时跳过像素自检
         var hostVapc = null;
+        var SPEEDS = [0.5, 1, 1.5, 2];
+        var speedIdx = 1;
 
         window.applyI18n = function() {
             lang = window.__lang || lang;
             _t = Object.assign({}, _defaultT, window.__translations || {});
+            btnPrevFrame.title = T('BTN_PrevFrame');
             btnPlay.title = T('BTN_PlayPause');
+            btnNextFrame.title = T('BTN_NextFrame');
             btnLoop.title = T('BTN_Loop');
+            btnSpeed.title = T('OPT_Speed') + ' (' + SPEEDS[speedIdx] + 'x)';
             btnMute.title = T('BTN_Volume');
             btnMeta.title = T('BTN_Meta');
             btnFlip.title = T('BTN_Flip');
             btnMode.title = T('BTN_Mode');
+            btnSave.title = T('BTN_Save');
+            btnCopyMeta.title = T('BTN_CopyMeta');
+            perfTitle.textContent = T('PERF_Title');
+            document.getElementById('lblFps').textContent = T('PERF_FPS');
+            document.getElementById('lblFrameTime').textContent = T('PERF_FrameTime');
+            document.getElementById('lblAvg').textContent = T('PERF_Avg');
+            document.getElementById('lblMinMax').textContent = T('PERF_Min') + '/' + T('PERF_Max');
             var mi = modeMenu.querySelectorAll('.mode-item');
             for (var i = 0; i < mi.length; i++)
                 mi[i].querySelector('.mi-label').textContent = T(MODE_KEYS[i]);
@@ -465,7 +614,7 @@
             statusEl.textContent = T('STATUS_Loading');
             updateModeBtn();
             updateInfo();
-            if (metaPinned) updateMetaPanel();
+            if (metaPinned || perfOverlay.classList.contains('show')) updateMetaPanel();
         };
         applyI18n();
 
@@ -575,7 +724,13 @@
                                     : T('SIDE_Top') + '/' + T('SIDE_Bottom');
         }
 
-        // --- Meta panel ---
+        // --- Unified Info & Performance Overlay ---
+        function formatBytes(bytes) {
+            if (!bytes || bytes <= 0) return '-';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
         function visibleSize() {
             if (!current || !current.outRect) return '-';
             return current.outRect[0] + '\u00d7' + current.outRect[1];
@@ -583,19 +738,273 @@
         function displaySize() { return visibleSize(); }
         function modeLabel() {
             return viewMode === 'auto' ? T('MODE_Auto')
+                 : viewMode === 'alphaOnly' ? T('MODE_AlphaOnly')
                  : viewMode === 'video' ? T('MODE_Video') : T('MODE_Alpha');
         }
         function updateMetaPanel() {
             var dur = duration ? duration.toFixed(2) + 's' : '-';
-            metaPanel.innerHTML =
-                '<div class="meta-row"><span class="label">' + T('META_Display') + '</span><span class="value">' + displaySize() + '</span></div>' +
-                '<div class="meta-row"><span class="label">' + T('META_Source') + '</span><span class="value">' + (rawW ? Math.round(rawW) + '\u00d7' + Math.round(rawH) : vw + '\u00d7' + vh) + '</span></div>' +
-                '<div class="meta-row"><span class="label">' + T('META_Layout') + '</span><span class="value">' + packLabel(current) + ' · ' + splitLabel(current) + '</span></div>' +
-                '<div class="meta-row"><span class="label">' + T('META_AlphaSide') + '</span><span class="value">' + sideLabel(current) + '</span></div>' +
-                '<div class="meta-row"><span class="label">' + T('META_Mode') + '</span><span class="value">' + modeLabel() + '</span></div>' +
-                '<div class="meta-row"><span class="label">' + T('META_Confidence') + '</span><span class="value">' + (autoChecked ? (autoNote || T('AUTO_Confirmed')) : T('AUTO_Skipped')) + '</span></div>' +
-                '<div class="meta-row"><span class="label">' + T('META_Duration') + '</span><span class="value">' + dur + '</span></div>';
+            var srcDim = rawW ? Math.round(rawW) + '\u00d7' + Math.round(rawH) : (vw ? vw + '\u00d7' + vh : '-');
+            var layoutText = packLabel(current) + ' · ' + splitLabel(current);
+            if (isVapx) layoutText += ' (VAPX)';
+            var rows = [
+                [T('META_Display'), displaySize()],
+                [T('META_Source'), srcDim],
+                [T('META_FileSize'), formatBytes(fileSize)],
+                [T('META_Layout'), layoutText],
+                [T('META_AlphaSide'), sideLabel(current)],
+                [T('META_Mode'), modeLabel()],
+                [T('META_Confidence'), autoChecked ? (autoNote || T('AUTO_Confirmed')) : T('AUTO_Skipped')],
+                [T('META_Duration'), dur]
+            ];
+            var html = '';
+            for (var i = 0; i < rows.length; i++) {
+                html += '<span class="pm-k">' + rows[i][0] + '</span><span class="pm-v">' + rows[i][1] + '</span>';
+            }
+            perfMetaGrid.innerHTML = html;
         }
+
+        // Performance sampling & waveform chart
+        var PERF_CAP = 60;
+        var perfSamples = [];
+        var perfLastTick = 0;
+        var perfHoveredIdx = -1;
+        var perfDrawScheduled = false;
+
+        function resetPerfStats() {
+            perfSamples = [];
+            perfLastTick = 0;
+            perfHoveredIdx = -1;
+            valFps.textContent = '-';
+            valFrameTime.textContent = '-';
+            valAvg.textContent = '-';
+            valMinMax.textContent = '-';
+            perfDot.className = 'perf-dot idle';
+            perfChartTip.classList.remove('show');
+            drawPerfChart();
+        }
+
+        function recordFrameStat(dt) {
+            if (!(dt > 0) || dt > 1000) return;
+            perfSamples.push(dt);
+            if (perfSamples.length > PERF_CAP) perfSamples.shift();
+            var now = performance.now();
+            if (now - perfLastTick < 120 && perfSamples.length > 2) {
+                schedulePerfDraw();
+                return;
+            }
+            perfLastTick = now;
+            var sum = 0, mn = Infinity, mx = 0;
+            for (var i = 0; i < perfSamples.length; i++) {
+                var v = perfSamples[i];
+                sum += v;
+                if (v < mn) mn = v;
+                if (v > mx) mx = v;
+            }
+            var avg = sum / perfSamples.length;
+            var fps = avg > 0 ? Math.min(240, 1000 / avg) : 0;
+            valFps.textContent = fps.toFixed(1);
+            valFrameTime.textContent = dt.toFixed(1) + ' ms';
+            valAvg.textContent = avg.toFixed(1) + ' ms';
+            valMinMax.textContent = mn.toFixed(1) + '/' + mx.toFixed(1);
+            if (!isPlaying && viewMode !== 'video') {
+                perfDot.className = 'perf-dot idle';
+            } else if (avg <= 20) {
+                perfDot.className = 'perf-dot';
+            } else if (avg <= 36) {
+                perfDot.className = 'perf-dot warn';
+            } else {
+                perfDot.className = 'perf-dot bad';
+            }
+            schedulePerfDraw();
+        }
+
+        function schedulePerfDraw() {
+            if (perfDrawScheduled) return;
+            perfDrawScheduled = true;
+            requestAnimationFrame(function() {
+                perfDrawScheduled = false;
+                if (perfOverlay.classList.contains('show')) drawPerfChart();
+            });
+        }
+
+        function drawPerfChart() {
+            var rect = perfChartWrap.getBoundingClientRect();
+            var w = Math.max(10, Math.floor(rect.width));
+            var h = Math.max(10, Math.floor(rect.height));
+            var dpr = Math.min(2, window.devicePixelRatio || 1);
+            if (perfChart.width !== w * dpr || perfChart.height !== h * dpr) {
+                perfChart.width = w * dpr;
+                perfChart.height = h * dpr;
+            }
+            var ctx = perfChart.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, w, h);
+
+            var budget = 16.67;
+            var maxVal = budget * 2;
+            for (var i = 0; i < perfSamples.length; i++) {
+                if (perfSamples[i] > maxVal) maxVal = perfSamples[i];
+            }
+            // Frame budget reference line (16.67ms)
+            var refY = Math.round(h - (budget / maxVal) * (h - 6)) - 2;
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(0, refY);
+            ctx.lineTo(w, refY);
+            ctx.stroke();
+            ctx.restore();
+
+            if (!perfSamples.length) return;
+            var barW = w / PERF_CAP;
+            var startX = w - perfSamples.length * barW;
+            for (var j = 0; j < perfSamples.length; j++) {
+                var val = perfSamples[j];
+                var bh = Math.max(2, (val / maxVal) * (h - 6));
+                var bx = startX + j * barW;
+                var by = h - bh - 1;
+                var isHov = (j === perfHoveredIdx);
+                ctx.fillStyle = isHov ? '#ffffff'
+                    : (val > 33.4 ? 'rgba(224,85,85,0.85)'
+                    : (val > budget ? 'rgba(224,176,64,0.82)' : 'rgba(220,220,220,0.72)'));
+                ctx.fillRect(bx + 0.5, by, Math.max(1, barW - 1), bh);
+            }
+        }
+
+        perfChartWrap.addEventListener('mousemove', function(e) {
+            if (!perfSamples.length) return;
+            var rect = perfChartWrap.getBoundingClientRect();
+            var relX = e.clientX - rect.left;
+            var barW = rect.width / PERF_CAP;
+            var startX = rect.width - perfSamples.length * barW;
+            var idx = Math.floor((relX - startX) / barW);
+            if (idx >= 0 && idx < perfSamples.length) {
+                perfHoveredIdx = idx;
+                perfChartTip.textContent = perfSamples[idx].toFixed(1) + ' ms';
+                perfChartTip.classList.add('show');
+                drawPerfChart();
+            } else {
+                perfHoveredIdx = -1;
+                perfChartTip.classList.remove('show');
+                drawPerfChart();
+            }
+        });
+        perfChartWrap.addEventListener('mouseleave', function() {
+            perfHoveredIdx = -1;
+            perfChartTip.classList.remove('show');
+            drawPerfChart();
+        });
+
+        // Drag & Edge-Resize for #perfOverlay
+        var SAFE_BOTTOM = 42, SAFE_TOP = 36, SAFE_SIDE = 8;
+        var MIN_PERF_W = 216, MIN_PERF_H = 168;
+        var perfDrag = null;
+
+        function resetPerfOverlayBounds() {
+            perfOverlay.style.width = '260px';
+            perfOverlay.style.height = '';
+            perfOverlay.style.left = '';
+            perfOverlay.style.top = '';
+            perfOverlay.style.right = '12px';
+            perfOverlay.style.bottom = SAFE_BOTTOM + 'px';
+            schedulePerfDraw();
+        }
+
+        perfHead.addEventListener('dblclick', function(e) {
+            if (e.target.closest('#btnCopyMeta')) return;
+            resetPerfOverlayBounds();
+        });
+
+        perfHead.addEventListener('mousedown', function(e) {
+            if (e.button !== 0 || e.target.closest('#btnCopyMeta')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            var r = perfOverlay.getBoundingClientRect();
+            perfOverlay.style.left = r.left + 'px';
+            perfOverlay.style.top = r.top + 'px';
+            perfOverlay.style.right = 'auto';
+            perfOverlay.style.bottom = 'auto';
+            perfOverlay.classList.add('interacting');
+            perfDrag = { type: 'move', startX: e.clientX, startY: e.clientY, origL: r.left, origT: r.top, w: r.width, h: r.height };
+        });
+
+        perfOverlay.querySelectorAll('.perf-resize').forEach(function(handle) {
+            handle.addEventListener('mousedown', function(e) {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                var r = perfOverlay.getBoundingClientRect();
+                perfOverlay.style.left = r.left + 'px';
+                perfOverlay.style.top = r.top + 'px';
+                perfOverlay.style.width = r.width + 'px';
+                perfOverlay.style.height = r.height + 'px';
+                perfOverlay.style.right = 'auto';
+                perfOverlay.style.bottom = 'auto';
+                perfOverlay.classList.add('interacting');
+                perfDrag = {
+                    type: 'resize', edge: handle.getAttribute('data-edge'),
+                    startX: e.clientX, startY: e.clientY,
+                    origL: r.left, origT: r.top, origW: r.width, origH: r.height
+                };
+            });
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!perfDrag) return;
+            var cw = window.innerWidth, ch = window.innerHeight;
+            var dx = e.clientX - perfDrag.startX;
+            var dy = e.clientY - perfDrag.startY;
+            if (perfDrag.type === 'move') {
+                var nl = Math.max(SAFE_SIDE, Math.min(cw - SAFE_SIDE - perfDrag.w, perfDrag.origL + dx));
+                var nt = Math.max(SAFE_TOP, Math.min(ch - SAFE_BOTTOM - perfDrag.h, perfDrag.origT + dy));
+                perfOverlay.style.left = nl + 'px';
+                perfOverlay.style.top = nt + 'px';
+            } else {
+                var edge = perfDrag.edge;
+                var nl2 = perfDrag.origL, nt2 = perfDrag.origT, nw = perfDrag.origW, nh = perfDrag.origH;
+                if (edge === 'nw' || edge === 'w') {
+                    var maxLeft = perfDrag.origL + perfDrag.origW - MIN_PERF_W;
+                    nl2 = Math.max(SAFE_SIDE, Math.min(maxLeft, perfDrag.origL + dx));
+                    nw = perfDrag.origL + perfDrag.origW - nl2;
+                }
+                if (edge === 'nw' || edge === 'n') {
+                    var maxTop = perfDrag.origT + perfDrag.origH - MIN_PERF_H;
+                    nt2 = Math.max(SAFE_TOP, Math.min(maxTop, perfDrag.origT + dy));
+                    nh = perfDrag.origT + perfDrag.origH - nt2;
+                }
+                perfOverlay.style.left = nl2 + 'px';
+                perfOverlay.style.top = nt2 + 'px';
+                perfOverlay.style.width = nw + 'px';
+                perfOverlay.style.height = nh + 'px';
+                drawPerfChart();
+            }
+        });
+        document.addEventListener('mouseup', function() {
+            if (perfDrag) {
+                perfDrag = null;
+                perfOverlay.classList.remove('interacting');
+            }
+        });
+
+        btnCopyMeta.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var lines = [
+                T('META_Display') + ': ' + displaySize(),
+                T('META_Source') + ': ' + (rawW ? Math.round(rawW) + 'x' + Math.round(rawH) : vw + 'x' + vh),
+                T('META_FileSize') + ': ' + formatBytes(fileSize),
+                T('META_Layout') + ': ' + packLabel(current) + ' / ' + splitLabel(current) + (isVapx ? ' (VAPX)' : ''),
+                T('META_AlphaSide') + ': ' + sideLabel(current),
+                T('META_Mode') + ': ' + modeLabel(),
+                T('META_Duration') + ': ' + (duration ? duration.toFixed(2) + 's' : '-'),
+                T('PERF_FPS') + ': ' + valFps.textContent + ' | ' + T('PERF_Avg') + ': ' + valAvg.textContent
+            ];
+            var text = lines.join('\n');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function() { showToast(T('TOAST_Copied')); })
+                    .catch(function() { showToast(T('TOAST_SaveFailed')); });
+            }
+        });
 
         var metaPinned = false;
         btnMeta.addEventListener('click', function(e) {
@@ -604,19 +1013,28 @@
             btnMeta.classList.toggle('pinned', metaPinned);
             if (metaPinned) {
                 updateMetaPanel();
-                metaPanel.classList.add('show');
+                perfOverlay.classList.add('show');
+                drawPerfChart();
             } else {
-                metaPanel.classList.remove('show');
+                perfOverlay.classList.remove('show');
             }
         });
         btnMeta.addEventListener('mouseenter', function() {
             if (!metaPinned) {
                 updateMetaPanel();
-                metaPanel.classList.add('show');
+                perfOverlay.classList.add('show');
+                drawPerfChart();
             }
         });
         btnMeta.addEventListener('mouseleave', function() {
-            if (!metaPinned) metaPanel.classList.remove('show');
+            if (!metaPinned && !perfOverlay.matches(':hover')) {
+                perfOverlay.classList.remove('show');
+            }
+        });
+        perfOverlay.addEventListener('mouseleave', function() {
+            if (!metaPinned && !btnMeta.matches(':hover')) {
+                perfOverlay.classList.remove('show');
+            }
         });
 
         // --- 像素统计：判定某区域「像不像遮罩」/「像不像画面」，并给出非黑包围盒 ---
@@ -896,8 +1314,12 @@
                 video: srcVideo,
                 rects: { rgb: m.rgb, alpha: m.alpha },
                 outSize: { w: Math.round(m.out.w), h: Math.round(m.out.h) },
-                maxSide: 1280
+                maxSide: 1280,
+                onFrameStat: recordFrameStat
             });
+            if (compositor && compositor.setViewMode) {
+                compositor.setViewMode(viewMode === 'alphaOnly' ? 1 : 0);
+            }
         }
 
         async function applyPacking(cand, lg) {
@@ -912,7 +1334,12 @@
             compositor.setRects({ rgb: m.rgb, alpha: m.alpha });
             compositor.setSize(m.out.w, m.out.h);
             if (viewMode === 'video') enterAlphaMode();
-            else { viewMode = 'alpha'; setActive(true); updateModeBtn(); }
+            else {
+                if (viewMode !== 'alphaOnly') viewMode = 'alpha';
+                if (compositor.setViewMode) compositor.setViewMode(viewMode === 'alphaOnly' ? 1 : 0);
+                setActive(true);
+                updateModeBtn();
+            }
         }
 
         // vapc 元数据路径（腾讯 VAP v2 官方对位坐标）：不做像素自检，精确矩形直通合成器。
@@ -937,14 +1364,14 @@
             log('vapc metadata: rgb=[' + cand.rgb.join(',') + '] alpha=[' + cand.alpha.join(',') +
                 '] out=' + cand.outW + 'x' + cand.outH);
             updateInfo();
-            if (metaPinned) updateMetaPanel();
+            if (metaPinned || perfOverlay.classList.contains('show')) updateMetaPanel();
         }
 
         function setActive(on) {
             if (compositor && compositor.setActive) compositor.setActive(on);
         }
 
-        // --- 预览模式切换（透明合成 / 普通视频）---
+        // --- 预览模式切换（透明合成 / 仅 Alpha 遮罩 / 普通视频）---
         function enterVideoMode() {
             if (viewMode === 'video') return;
             viewMode = 'video';
@@ -954,28 +1381,31 @@
             if (!rafId) rafId = requestAnimationFrame(tick);
             updateModeBtn();
             updateInfo();
-            if (metaPinned) updateMetaPanel();
+            if (metaPinned || perfOverlay.classList.contains('show')) updateMetaPanel();
             showToast(T('MODE_Video'));
         }
 
-        function enterAlphaMode() {
-            viewMode = 'alpha';
+        function enterAlphaMode(alphaOnly) {
+            viewMode = alphaOnly ? 'alphaOnly' : 'alpha';
             if (!current && candidates.length) current = candidates[0];
             stage.classList.remove('plain');
             if (!compositor) {
                 buildCompositor().then(function() {
                     if (current) applyPacking(current, current._lg);
                 });
-            } else setActive(true);
+            } else {
+                if (compositor.setViewMode) compositor.setViewMode(alphaOnly ? 1 : 0);
+                setActive(true);
+            }
             srcVideo.play().catch(function() { });
             updateModeBtn();
             updateInfo();
-            if (metaPinned) updateMetaPanel();
-            showToast(T('MODE_Alpha'));
+            if (metaPinned || perfOverlay.classList.contains('show')) updateMetaPanel();
+            showToast(T(alphaOnly ? 'MODE_AlphaOnly' : 'MODE_Alpha'));
         }
 
         function updateModeBtn() {
-            btnMode.classList.toggle('active', modeMenuOpen || viewMode === 'video');
+            btnMode.classList.toggle('active', modeMenuOpen || viewMode === 'video' || viewMode === 'alphaOnly');
             var items = modeMenu.querySelectorAll('.mode-item');
             for (var i = 0; i < items.length; i++)
                 items[i].classList.toggle('checked', items[i].getAttribute('data-mode') === viewMode);
@@ -987,20 +1417,23 @@
             updateModeBtn();
         }
 
-        // 模式选择统一入口：auto 重跑像素自检重新决策；alpha / video 为手动锁定
+        // 模式选择统一入口：auto 重跑像素自检重新决策；alpha / alphaOnly / video 为手动锁定
         async function setViewMode(mode) {
             if (mode === 'auto') {
                 viewMode = 'auto';
                 autoChecked = false;
                 autoNote = '';
+                if (compositor && compositor.setViewMode) compositor.setViewMode(0);
                 updateModeBtn();
                 updateInfo();
                 showToast(T('MODE_Auto'));
                 await runAutoDetect();
                 updateInfo();
-                if (metaPinned) updateMetaPanel();
+                if (metaPinned || perfOverlay.classList.contains('show')) updateMetaPanel();
             } else if (mode === 'alpha') {
-                enterAlphaMode();
+                enterAlphaMode(false);
+            } else if (mode === 'alphaOnly') {
+                enterAlphaMode(true);
             } else {
                 enterVideoMode();
             }
@@ -1137,8 +1570,6 @@
         document.addEventListener('click', function(e) {
             if (!colorPicker.contains(e.target) && e.target !== btnBg && !btnBg.contains(e.target))
                 colorPicker.classList.remove('show');
-            if (!metaPinned && !metaPanel.contains(e.target) && e.target !== btnMeta && !btnMeta.contains(e.target))
-                metaPanel.classList.remove('show');
         });
 
         if (bgIndex < 0) { bgLayer.className = ''; bgLayer.style.background = customBgColor; }
@@ -1148,19 +1579,17 @@
         function showControls() {
             controls.classList.remove('hidden');
             topBar.classList.remove('hidden');
-            infoEl.classList.add('show');
             resetHideTimer();
         }
         function hideControls() {
-            if (isDragging) return;
+            if (isDragging || perfDrag) return;
             controls.classList.add('hidden');
             topBar.classList.add('hidden');
-            infoEl.classList.remove('show');
             volumeLayer.classList.remove('show');
             colorPicker.classList.remove('show');
             setModeMenu(false);
             setSideMenu(false);
-            metaPanel.classList.remove('show');
+            if (!metaPinned) perfOverlay.classList.remove('show');
         }
         function resetHideTimer() {
             if (hideTimer) clearTimeout(hideTimer);
@@ -1183,9 +1612,8 @@
         }
 
         function updateInfo() {
-            infoEl.textContent = (viewMode === 'video' ? T('MODE_Video')
-                : visibleSize() + ' · ' + packLabel(current) + ' · ' + sideLabel(current));
             updateSideMenu();
+            if (metaPinned || perfOverlay.classList.contains('show')) updateMetaPanel();
         }
 
         // --- Volume ---
@@ -1327,7 +1755,19 @@
             isDragging = false; progressWrap.classList.remove('dragging');
         });
 
-        // --- Buttons ---
+        // --- Buttons & Shortcuts ---
+        var FRAME_STEP = 1 / 30;
+        function stepFrame(dir) {
+            if (!duration) return;
+            srcVideo.pause();
+            var next = Math.max(0, Math.min(duration, srcVideo.currentTime + dir * FRAME_STEP));
+            srcVideo.currentTime = next;
+            updateProgress(duration > 0 ? next / duration : 0);
+        }
+
+        btnPrevFrame.addEventListener('click', function() { stepFrame(-1); });
+        btnNextFrame.addEventListener('click', function() { stepFrame(1); });
+
         btnPlay.addEventListener('click', function() {
             if (isPlaying) srcVideo.pause(); else srcVideo.play().catch(function() { });
         });
@@ -1337,6 +1777,67 @@
             btnLoop.classList.toggle('active', isLooping);
             btnLoop.querySelector('.icon').textContent = isLooping ? ICON_LOOP_ON : ICON_LOOP_OFF;
             srcVideo.loop = isLooping;
+        });
+
+        btnSpeed.addEventListener('click', function() {
+            speedIdx = (speedIdx + 1) % SPEEDS.length;
+            var r = SPEEDS[speedIdx];
+            srcVideo.playbackRate = r;
+            btnSpeed.textContent = r + 'x';
+            btnSpeed.title = T('OPT_Speed') + ' (' + r + 'x)';
+        });
+
+        function capturePngDataUrl() {
+            if (viewMode !== 'video' && compositor && compositor.capture) {
+                return compositor.capture();
+            }
+            if (!srcVideo || srcVideo.readyState < 2 || !srcVideo.videoWidth) return null;
+            var cv = document.createElement('canvas');
+            cv.width = srcVideo.videoWidth;
+            cv.height = srcVideo.videoHeight;
+            var ctx = cv.getContext('2d');
+            ctx.drawImage(srcVideo, 0, 0, cv.width, cv.height);
+            return cv.toDataURL('image/png');
+        }
+
+        function sendCaptureMessage(msgType, toastKey) {
+            var dataUrl = capturePngDataUrl();
+            if (!dataUrl) {
+                showToast(T('TOAST_SaveFailed'));
+                return;
+            }
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({ type: msgType, dataUrl: dataUrl });
+                showToast(T(toastKey));
+            } else {
+                showToast(T('TOAST_SaveFailed'));
+            }
+        }
+
+        btnSave.addEventListener('click', function() {
+            sendCaptureMessage('saveImage', 'TOAST_Saved');
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+                e.preventDefault();
+                sendCaptureMessage('copyImage', 'TOAST_Copied');
+                return;
+            }
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                showControls();
+                stepFrame(-1);
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                showControls();
+                stepFrame(1);
+            } else if (e.code === 'Space') {
+                e.preventDefault();
+                showControls();
+                if (isPlaying) srcVideo.pause(); else srcVideo.play().catch(function() { });
+            }
         });
 
         // --- Load ---
@@ -1369,6 +1870,8 @@
 
                 rawW = msg.rawWidth || 0;
                 rawH = msg.rawHeight || 0;
+                fileSize = msg.fileSize || 0;
+                isVapx = !!msg.isVapx;
                 hostVapc = msg.vapc || null;
                 viewMode = 'auto';
                 autoChecked = false;
@@ -1376,6 +1879,10 @@
                 current = null;
                 candidates = [];
                 duration = 0;
+                speedIdx = 1;
+                btnSpeed.textContent = '1x';
+                srcVideo.playbackRate = 1;
+                resetPerfStats();
                 stage.classList.remove('plain');
                 setModeMenu(false);
                 setSideMenu(false);
@@ -1383,17 +1890,25 @@
 
                 if (compositor) { try { compositor.destroy(); } catch (e) { } compositor = null; }
                 srcVideo.pause();
-                // 只有真加载过才 reset：空 src 上调用 load() 会异步抛 code 4，误判成解码失败
                 if (blobUrl) {
                     URL.revokeObjectURL(blobUrl);
                     blobUrl = null;
+                }
+                if (srcVideo.hasAttribute('src')) {
                     srcVideo.removeAttribute('src');
                     srcVideo.load();
                 }
 
-                blobUrl = decode(msg.base64);
-                srcVideo.src = blobUrl;
+                if (msg.videoUrl) {
+                    srcVideo.src = msg.videoUrl;
+                } else if (msg.base64) {
+                    blobUrl = decode(msg.base64);
+                    srcVideo.src = blobUrl;
+                } else {
+                    throw new Error('No video source');
+                }
                 srcVideo.loop = isLooping;
+                srcVideo.playbackRate = SPEEDS[speedIdx];
                 applyVolume();
 
                 await waitForMetadata(8000);

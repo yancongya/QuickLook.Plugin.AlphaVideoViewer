@@ -22,17 +22,19 @@
 | 字节 AlphaPlayer | 逐帧像素自检 | 左右/上下半幅拼接，解几帧按「遮罩纯灰 × 画面彩色 × 包围盒对齐」评分确认 |
 | 腾讯 VAP 压平素材 / v1 | 逐帧像素自检 | 无 `vapc` 盒的 VAP 素材，含象限遮罩候选网格 |
 | YYEVA（快手） | 逐帧像素自检 | 拼接类素材可识别；纯视频自动交回内置播放器。不解析 YYEVA 元数据 |
-| 普通 MP4/MOV/M4V | — | 自检确认两半皆彩色后交回内置 VideoViewer，绝不抢普通视频（宁漏勿抢） |
+| 普通 MP4/MOV/M4V | — | 严格模式下仅在 `vapc` 或 `FrameProbe` 明确判定 `AlphaLike` 时接管，其余交回内置 VideoViewer，绝不抢普通视频（支持文件名末尾加 `_alpha` / `.alpha` / `-alpha` / `_vap` / `.vap` / `-vap` 强行接管） |
 
 ### 功能特性
 
-- **自研识别 = 元数据优先 + 像素自检兜底**：`vapc` 命中即定案、跳过一切猜测；无元数据的拼接素材走 Media Foundation 解码像素自检；普通视频自动放行
-- **自研渲染 = 自写极简 WebGL 合成器**：单帧纹理取两个任意源矩形，`rgb × alpha` 预乘输出，可原生表达主区与遮罩不同长宽比的 VAP 素材（主流库假设两块同长宽比，做不到）
-- 像素判据是「遮罩有多纯灰 × 画面有多彩 × 两块包围盒是否对齐」，纯色/降采样遮罩都能命中；合成结果几乎全透明时自动退回普通预览，不会显示一片空白
-- 工具栏一键在候选方案间翻转（含切回不处理的原始视频预览），带遮罩区域可视化
+- **自研识别 = 元数据优先 + 严格像素自检**：`vapc` 命中即定案、跳过一切猜测；无元数据的拼接素材走 Media Foundation 解码像素自检（自动跳过全黑片头关键帧并校验前景彩度）；普通视频自动放行，同时支持文件名标记强行接管
+- **自研渲染 = 自写极简 WebGL 合成器 + 按帧回调**：单帧纹理取两个任意源矩形，`rgb × alpha` 预乘输出，由 `requestVideoFrameCallback` 按帧驱动（暂停零空转），并支持「仅 Alpha 遮罩」灰度调试视图
+- **流式加载**：通过本地虚拟路由 `WebResourceRequested` + `RangeStream` 按字节切片读取视频，免除全文件 base64 内存拷贝
+- 候选方案一键切换（左/右/上/下/四分幅候选/普通视频/仅 Alpha 遮罩），透明合成结果近空时自动退回普通预览
+- **单帧步进与倍速播放**：支持上一帧 / 下一帧（`←` / `→` / `Space`）与 `0.5x` / `1x` / `1.5x` / `2x` 倍速切换
+- **透明 PNG 导出与复制**：支持一键保存当前帧为透明 PNG（`#btnSave`），或 `Ctrl+C` 直接复制透明 PNG 文件到剪贴板
+- **右下角透明「信息与性能」面板**：统一展示显示尺寸、源视频尺寸、文件大小、布局、`VAPX` 标识、时长、实时 FPS、帧耗时波形图（含 `16.67ms` 帧预算参考线与悬停读数），支持拖拽移动、边缘缩放、双击复位与一键复制摘要
 - 棋盘格 / 白色 / 黑色 / 自定义背景，循环、进度条拖拽、缩放平移、音量
-- 自动隐藏控制栏，适配 QuickLook 暗色/亮色主题
-- 中英双语支持
+- 原生黑白灰主题 + 统一旋转 Loading 动画，中英双语全覆盖（含 `Translations.config`）
 
 ### 安装
 
@@ -66,12 +68,18 @@ powershell -ExecutionPolicy Bypass -File Scripts/build.ps1
 
 | 操作 | 方式 |
 |------|------|
-| 播放/暂停 | 点击按钮 |
+| 播放 / 暂停 | 点击按钮 / `Space` |
+| 单帧步进 | 上一帧 / 下一帧按钮 / `←` / `→` |
+| 倍速播放 | 底部倍速按钮（`0.5x` / `1x` / `1.5x` / `2x`） |
 | 跳转 | 点击/拖拽进度条 |
 | 音量 | 鼠标滚轮 / 滑块 |
-| 翻转 Alpha 位置 | 右上角翻转按钮 |
+| 预览模式 | 右上角模式按钮（自动 / 透明合成 / 仅 Alpha 遮罩 / 普通视频） |
+| 切换拼接方式 | 右上角翻转按钮 |
+| 保存 / 复制 PNG | 右上角保存按钮 / `Ctrl+C` |
+| 信息与性能面板 | 右上角信息按钮（悬停预览 / 点击固定，支持拖拽与边缘缩放） |
 | 背景 | 右上角背景按钮（右键选择颜色） |
 | 缩放/平移 | Ctrl+滚轮 / 拖拽 / 双击复位 |
+| 强制接管文件 | 文件名末尾（扩展名前）加 `_alpha` / `.alpha` / `-alpha` / `_vap` / `.vap` / `-vap` |
 
 ### 项目结构
 
@@ -101,11 +109,17 @@ powershell -ExecutionPolicy Bypass -File Scripts/build.ps1
 
 浏览器侧可用 `?autotest=<url-encoded 路径>[|WxH]` 直接加载某个样本跑检测（仅 harness 用，插件运行不依赖）。
 
+CLI 端到端测试与截图自检：
+
+```powershell
+powershell -STA -ExecutionPolicy Bypass -File Scripts/test-cli.ps1 -VerifyFeatures
+powershell -STA -ExecutionPolicy Bypass -File Scripts/test-cli.ps1 -ScreenshotPath preview.png
+```
+
 ### 已知限制
 
-- 几何初筛（切半后内容宽高比 1:1～2.5:1）无法区分真实拼接与普通视频；Media Foundation 解码像素自检负责确认，命中"两半皆彩色"的普通 MP4/MOV/M4V 会直接交回内置 VideoViewer，无需手动翻转。若机器缺少所需解码器、单色/暗场帧占比过大等无法定论的情况，仍沿用几何初筛接管并交给前端逐帧自检——这是有意的"宁漏勿抢"降级
-- 腾讯 VAP 的"主区占半幅、遮罩降采样塞进相邻象限"能自动识别，但不解析 `.vap` / ZIP / JSON / YYEVA 元数据，也不还原其动态元素，仅按像素推断的矩形合成
-- 不支持从预览界面保存透明 PNG 帧（WebGL 画布读取限制）
+- 严格模式下仅命中 `vapc` 或 `FrameProbe` 明确确认 `AlphaLike` 的素材才接管；若少数极特殊编码或极端低彩素材被放行给原生播放器，可通过文件名添加 `_alpha` / `.alpha` / `_vap` 等标记强行接管
+- 腾讯 VAP 的“主区占半幅、遮罩降采样塞进相邻象限”能自动识别，但不解析 `.vap` / ZIP / JSON / YYEVA 元数据，也不还原其动态元素，仅按像素推断的矩形合成
 - `.gif` / `.webm` 等其他透明视频容器不在接管范围
 
 ---
@@ -126,16 +140,18 @@ Gift animations, splash effects and interactive stickers in live streaming usual
 | ByteDance AlphaPlayer | Per-frame pixel self-check | Side-by-side / top-bottom halves, confirmed by sampling decoded frames ("mask greyness × frame colourfulness × bounding-box alignment") |
 | Flattened VAP / VAP v1 | Per-frame pixel self-check | VAP assets without a `vapc` box, including quadrant-mask candidate grids |
 | YYEVA (Kuaishou) | Per-frame pixel self-check | Split assets are recognised; plain videos fall back to the built-in player. YYEVA metadata is not parsed |
-| Ordinary MP4/MOV/M4V | — | Once both halves decode as colourful the file is handed back to the built-in VideoViewer — never grabs an unconfirmed match |
+| Ordinary MP4/MOV/M4V | — | Strict mode only takes over on `vapc` or confirmed `AlphaLike`; ordinary/ambiguous files fall back to VideoViewer (suffix `_alpha` / `.alpha` / `-alpha` / `_vap` / `.vap` / `-vap` forces takeover) |
 
 ### Features
 
-- **Self-written detection = metadata first, pixel self-check as fallback**: a valid `vapc` box settles alignment immediately; flattened split assets go through a Media Foundation decode pass; ordinary videos are released to the built-in player
-- **Self-written rendering = a minimal WebGL compositor**: two arbitrary source rects from one frame texture, premultiplied `rgb × alpha`, natively expressing VAP assets whose main and mask have different aspect ratios (mainstream libraries assume equal aspects and cannot)
-- Scored by "how grey the mask is × how colourful the frame is × how the two bounding boxes align"; solid or downsampled masks both match, and an essentially-empty composite falls back to plain video instead of showing nothing
-- Toolbar button cycles candidates (including a return to the untouched video preview) with mask-region visualisation
+- **Self-written detection = metadata first, strict pixel self-check**: a valid `vapc` box settles alignment immediately; split assets go through a Media Foundation decode pass (skipping black keyframes and checking foreground chroma); ordinary videos are released to the built-in player, with filename marker override when needed
+- **Self-written rendering = minimal WebGL compositor + per-frame callbacks**: two arbitrary source rects from one frame texture, premultiplied `rgb × alpha`, driven by `requestVideoFrameCallback` (zero idle GPU spin when paused), plus an Alpha-only grayscale mask debug mode
+- **Streaming video loading**: served via `WebResourceRequested` + `RangeStream` byte slices without full-file base64 duplication
+- Frame-by-frame stepping (`←` / `→` / `Space`) and playback speed cycling (`0.5x` / `1x` / `1.5x` / `2x`)
+- Transparent PNG export (`#btnSave`) and clipboard copy (`Ctrl+C`)
+- Bottom-right transparent **Info & Performance** overlay (dimensions, file size, layout, `VAPX` tag, live FPS, frame-time waveform with `16.67ms` budget line, bar hover readout, drag/edge-resize, double-click reset, summary copy)
 - Checkerboard / white / black / custom background, loop, seek, zoom & pan, volume
-- Auto-hide control bar, QuickLook dark/light theme, bilingual UI
+- Native monochrome gray/white styling with unified spinning Loading indicator and full bilingual i18n (`Translations.config`)
 
 ### Installation
 
@@ -179,9 +195,8 @@ In a browser, `?autotest=<url-encoded path>[|WxH]` loads a sample straight into 
 
 ### Known Limitations
 
-- The geometry pre-filter (halved aspect 1:1–2.5:1) cannot tell real split assets from ordinary videos on its own; the Media Foundation decode pass is what confirms them. Any MP4/MOV/M4V whose decoded halves are both colourful is handed back to the built-in VideoViewer without a manual flip. If the required decoder is missing, sampled frames are dominated by monochrome/dark ambiguity, or the decode path fails, the plugin still takes over and lets the front-end per-frame self-check decide — an intentional "would rather miss than grab" degradation
+- Strict mode only takes over on `vapc` metadata or confirmed `AlphaLike` frames; for edge-case files released to the built-in player, append `_alpha` / `.alpha` / `-alpha` / `_vap` / `.vap` / `-vap` before the extension to force takeover
 - Tencent VAP "main fills a half, mask downsampled into an adjacent quadrant" is auto-detected, but `.vap` / ZIP / JSON / YYEVA metadata is not parsed and their dynamic elements are not restored — only the pixel-inferred rects are composited
-- Saving transparent PNG frames from the preview is not supported (WebGL readback limitation)
 - Other transparent containers (`.gif`, `.webm`) are out of scope
 
 ---
