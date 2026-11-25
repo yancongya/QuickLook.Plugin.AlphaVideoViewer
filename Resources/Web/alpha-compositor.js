@@ -18,6 +18,7 @@ var FS = [
     'uniform vec4 uAlpha;',
     'uniform float uFlipR;', // 1 = 水平镜像（旋转元数据）
     'uniform float uFlipV;', // 1 = 上下翻转
+    'uniform float uViewMode;', // 0 = Alpha 合成, 1 = 仅 Alpha 黑白遮罩
     'varying vec2 vUv;',
     'vec2 mapRect(vec4 r, vec2 p) {',
     '  return vec2(r.x + p.x * r.z, r.y + p.y * r.w);',
@@ -28,7 +29,11 @@ var FS = [
     '  p.y = mix(p.y, 1.0 - p.y, uFlipV);',
     '  vec3 c = texture2D(uTex, mapRect(uRgb, p)).rgb;',
     '  float a = texture2D(uTex, mapRect(uAlpha, p)).r;',
-    '  gl_FragColor = vec4(c * a, a);', // 预乘 alpha，配合 ONE/ONE_MINUS_SRC_ALPHA
+    '  if (uViewMode > 0.5) {',
+    '    gl_FragColor = vec4(vec3(a), 1.0);',
+    '  } else {',
+    '    gl_FragColor = vec4(c * a, a);', // 预乘 alpha，配合 ONE/ONE_MINUS_SRC_ALPHA
+    '  }',
     '}'
 ].join('\n');
 
@@ -52,7 +57,7 @@ export default function createCompositor(options) {
     canvas.style.cssText = 'position:absolute;inset:0;margin:auto;max-width:100%;max-height:100%;display:block;';
     options.container.appendChild(canvas);
 
-    var gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true });
+    var gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true, preserveDrawingBuffer: true });
     if (!gl) throw new Error('WebGL unavailable');
 
     var prog = gl.createProgram();
@@ -86,15 +91,20 @@ export default function createCompositor(options) {
         rgb: gl.getUniformLocation(prog, 'uRgb'),
         alpha: gl.getUniformLocation(prog, 'uAlpha'),
         flipR: gl.getUniformLocation(prog, 'uFlipR'),
-        flipV: gl.getUniformLocation(prog, 'uFlipV')
+        flipV: gl.getUniformLocation(prog, 'uFlipV'),
+        viewMode: gl.getUniformLocation(prog, 'uViewMode')
     };
     gl.uniform1i(u.tex, 0);
     gl.uniform4fv(u.rgb, rects.rgb);
     gl.uniform4fv(u.alpha, rects.alpha);
     gl.uniform1f(u.flipR, rects.flipH ? 1 : 0);
     gl.uniform1f(u.flipV, rects.flipV ? 1 : 0);
+    gl.uniform1f(u.viewMode, 0);
 
-    var raf = 0, destroyed = false, lastFrame = -1, active = true;
+    var raf = 0, rvfcId = 0, destroyed = false, lastFrame = -1, active = true;
+    var hasRvfc = typeof video.requestVideoFrameCallback === 'function';
+    var onFrameStat = typeof options.onFrameStat === 'function' ? options.onFrameStat : null;
+    var lastStatTs = 0;
 
     function resize() {
         var vw = video.videoWidth, vh = video.videoHeight;
@@ -109,11 +119,11 @@ export default function createCompositor(options) {
         }
     }
 
-    function renderOnce() {
+    function renderOnce(forceUpload) {
         resize();
         if (video.readyState < 2 || video.videoWidth <= 0) return false;
         var stamp = video.currentTime + ':' + video.videoWidth;
-        if (stamp !== lastFrame || !video.paused) {
+        if (forceUpload || stamp !== lastFrame || !video.paused) {
             lastFrame = stamp;
             try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video); }
             catch (e) { /* 帧尚未就绪 */ }
@@ -124,13 +134,37 @@ export default function createCompositor(options) {
         return true;
     }
 
-    function draw() {
+    function scheduleNext() {
         if (destroyed) return;
-        if (active) renderOnce();
-        raf = requestAnimationFrame(draw);
+        if (hasRvfc) {
+            rvfcId = video.requestVideoFrameCallback(function (now) {
+                if (destroyed) return;
+                if (active) {
+                    var t0 = performance.now();
+                    renderOnce(true);
+                    var dt = lastStatTs > 0 ? (now - lastStatTs) : (performance.now() - t0);
+                    lastStatTs = now;
+                    if (onFrameStat && dt > 0 && dt < 1000) onFrameStat(dt);
+                }
+                scheduleNext();
+            });
+        } else {
+            raf = requestAnimationFrame(function (now) {
+                if (destroyed) return;
+                if (active && (!video.paused || lastFrame === -1)) {
+                    renderOnce(false);
+                    var dt = lastStatTs > 0 ? (now - lastStatTs) : 16.7;
+                    lastStatTs = now;
+                    if (onFrameStat && !video.paused && dt > 0 && dt < 1000) onFrameStat(dt);
+                }
+                scheduleNext();
+            });
+        }
     }
+    var onSeeked = function () { if (active) renderOnce(true); };
+    video.addEventListener('seeked', onSeeked);
     resize();
-    raf = requestAnimationFrame(draw);
+    scheduleNext();
 
     return {
         canvas: canvas,
@@ -139,21 +173,32 @@ export default function createCompositor(options) {
             gl.uniform4fv(u.alpha, next.alpha);
             gl.uniform1f(u.flipR, next.flipH ? 1 : 0);
             gl.uniform1f(u.flipV, next.flipV ? 1 : 0);
+            if (active) renderOnce(true);
+        },
+        setViewMode: function (mode) {
+            gl.uniform1f(u.viewMode, mode ? 1 : 0);
+            if (active) renderOnce(true);
         },
         setSize: function (w, h) {
             if (!(w > 0) || !(h > 0)) return;
             outSize = { w: w, h: h };
             resize();
+            if (active) renderOnce(true);
         },
         setActive: function (on) {
             active = !!on;
-            if (active) lastFrame = -1;   // 恢复时强制重新上传一帧
+            if (active) { lastFrame = -1; renderOnce(true); }
+        },
+        capture: function () {
+            if (video.readyState < 2 || video.videoWidth <= 0) return null;
+            renderOnce(true);
+            return canvas.toDataURL('image/png');
         },
         // 同步渲染一帧并回读像素：只给自检 / 自动化测试用
         readback: function () {
             var wasActive = active;
             active = true;
-            var drew = renderOnce();
+            var drew = renderOnce(true);
             active = wasActive;
             if (!drew) return null;
             var w = canvas.width, h = canvas.height;
@@ -163,7 +208,11 @@ export default function createCompositor(options) {
         },
         destroy: function () {
             destroyed = true;
-            cancelAnimationFrame(raf);
+            video.removeEventListener('seeked', onSeeked);
+            if (hasRvfc && rvfcId && typeof video.cancelVideoFrameCallback === 'function') {
+                try { video.cancelVideoFrameCallback(rvfcId); } catch (e) {}
+            }
+            if (raf) cancelAnimationFrame(raf);
             gl.deleteTexture(tex);
             gl.deleteBuffer(buf);
             gl.deleteProgram(prog);

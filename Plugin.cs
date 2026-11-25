@@ -33,18 +33,30 @@ namespace QuickLook.Plugin.AlphaVideoViewer
                 !path.EndsWith(".m4v", StringComparison.OrdinalIgnoreCase))
                 return false;
 
+            if (HasForceMarker(path)) return true;
+
             var probe = Mp4Probe.Probe(path);
             if (probe == null || probe.Layout == AlphaLayout.None) return false;
 
             // vapc 是官方写进文件的权威对位信息，命中即定案，无需像素自检
             if (probe.Layout == AlphaLayout.Vapc) return true;
 
-            // 几何初筛只按宽高比放宽（普通 16:9/4:3 切半后也落在区间内），无法区分真实拼接与普通视频；
-            // 再解几帧做像素自检：确认为普通视频（两半都彩色）→ 交回内置 VideoViewer；
-            // 命中拼接或无法定论（解码失败/单色歧义）→ 沿用几何初筛接管，细节交前端逐帧自检。宁漏勿抢。
+            // 严格模式：仅当解码像素自检明确确认「近灰度遮罩 + 有色内容」特征（AlphaLike）时接管；
+            // 普通视频（NotAlpha）或无法定论的素材（Unknown，如特殊编码 .mov / 纯暗灰画面）交回原生 VideoViewer。
             var check = FrameProbe.Check(path, probe.Width, probe.Height, probe.DurationSeconds);
-            if (check == SplitCheck.NotAlpha) return false;
-            return true;
+            return check == SplitCheck.AlphaLike;
+        }
+
+        private static bool HasForceMarker(string path)
+        {
+            var stem = Path.GetFileNameWithoutExtension(path);
+            if (string.IsNullOrEmpty(stem)) return false;
+            return stem.EndsWith("_alpha", StringComparison.OrdinalIgnoreCase) ||
+                   stem.EndsWith(".alpha", StringComparison.OrdinalIgnoreCase) ||
+                   stem.EndsWith("-alpha", StringComparison.OrdinalIgnoreCase) ||
+                   stem.EndsWith("_vap", StringComparison.OrdinalIgnoreCase) ||
+                   stem.EndsWith(".vap", StringComparison.OrdinalIgnoreCase) ||
+                   stem.EndsWith("-vap", StringComparison.OrdinalIgnoreCase);
         }
 
         public void Prepare(string path, ContextObject context)
@@ -64,7 +76,7 @@ namespace QuickLook.Plugin.AlphaVideoViewer
 
             // vapc 元数据直送前端：精确矩形跳过像素检测，对位由官方坐标决定
             if (probe != null && probe.Layout == AlphaLayout.Vapc && probe.Vap != null)
-                _viewerPanel.SetVapRects(probe.Vap.RgbRect, probe.Vap.AlphaRect, probe.Vap.OutW, probe.Vap.OutH);
+                _viewerPanel.SetVapRects(probe.Vap.RgbRect, probe.Vap.AlphaRect, probe.Vap.OutW, probe.Vap.OutH, probe.Vap.IsVapx);
 
             _viewerPanel.LoadFile(path);
 

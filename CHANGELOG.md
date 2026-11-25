@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-25
+
+### Added
+- Streaming virtual-host video loading (`https://alphavideo.local/`) in `AlphaVideoViewerPanel`, removing full-file `File.ReadAllBytes` + base64 memory duplication
+- `requestVideoFrameCallback`-driven WebGL rendering in `alpha-compositor.js`, eliminating GPU idle spinning while paused
+- Alpha-only monochrome mask debug view (`MODE_AlphaOnly`) via `uViewMode` uniform in `alpha-compositor.js`
+- Transparent PNG current-frame export (`#btnSave`) and clipboard copy (`Ctrl+C`)
+- Frame-by-frame stepping (`#btnPrevFrame` / `#btnNextFrame`, `←` / `→` / `Space` shortcuts) and playback speed cycling (`0.5x` / `1x` / `1.5x` / `2x`)
+- Unified bottom-right transparent Info & Performance overlay (`#perfOverlay`) with live FPS, frame-time waveform chart (`16.67ms` budget reference line + bar hover readout), drag/edge-resize, double-click reset, summary copy, file size, and `VAPX` tag
+- Full bilingual Chinese/English `Translations.config` coverage for all new controls and telemetry labels
+- Strict takeover mode in `Plugin.CanHandle` (takes over only on `Vapc` or `SplitCheck.AlphaLike`), plus force-takeover filename markers (`_alpha`, `.alpha`, `-alpha`, `_vap`, `.vap`, `-vap`)
+- Unified monochrome spinning Loading indicator in `AlphaVideoViewerPanel.xaml(.cs)` with localized status text
+- Headless CLI E2E test & screenshot script (`Scripts/test-cli.ps1`) supporting `-VerifyFeatures` and `-ScreenshotPath`
+
+### Changed
+- `Mp4Probe` and `FrameProbe` caches now validate `FileLength` + `LastWriteTimeUtc` fingerprints to prevent stale hits when files are replaced in place
+- `FrameProbe` now skips black keyframe intros and uses foreground-only chroma contrast so all 5 official reference samples pass in strict mode
+- Replaced `System.Text.Json` with built-in `System.Web.Extensions` (`JavaScriptSerializer`), eliminating `System.Runtime.CompilerServices.Unsafe` binding errors and shrinking `.qlplugin` size (`0.84 MB -> 0.48 MB`)
+- Served streaming video via `https://alphavideo.local/__video__` (`WebResourceRequested` + `RangeStream` with CORS) instead of `SetVirtualHostNameToFolderMapping`, fixing `MEDIA_ERR_SRC_NOT_SUPPORTED` (code 4)
+- Native monochrome gray/white styling (`--accent: #e0e0e0`), raised control/toolbar z-index (`25`), tightened `#perfOverlay` chart default height (`40px`), and removed top-left `#info` / old `#metaPanel`
+
 ## [1.0.0] - 2026-10-29
 
 ### Added

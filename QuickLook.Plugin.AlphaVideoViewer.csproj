@@ -60,6 +60,7 @@
   <ItemGroup>
     <PackageReference Include="QuickLook.Common" Version="4.5.0" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2739.15" />
-    <PackageReference Include="System.Text.Json" Version="6.0.10" />
+    <Reference Include="System.Web" />
+    <Reference Include="System.Web.Extensions" />
   </ItemGroup>
 </Project>

@@ -1,8 +1,10 @@
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
-using System.Text.Json;
+using System.Text;
+using System.Web.Script.Serialization;
 
 namespace QuickLook.Plugin.AlphaVideoViewer.Probing
 {
@@ -50,6 +52,8 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
         /// </summary>
         public double AlphaScale = 1.0;
 
+        public long FileLength;
+        public DateTime LastWriteTimeUtc;
         public DateTime CheckedAt;
     }
 
@@ -86,8 +90,19 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
 
         public static ProbeResult Probe(string path)
         {
+            long curLen = -1;
+            DateTime curWrite = DateTime.MinValue;
+            try
+            {
+                var fi = new FileInfo(path);
+                if (fi.Exists) { curLen = fi.Length; curWrite = fi.LastWriteTimeUtc; }
+            }
+            catch { }
+
             if (Cache.TryGetValue(path, out var cached) &&
-                DateTime.Now - cached.CheckedAt < CacheTtl)
+                DateTime.Now - cached.CheckedAt < CacheTtl &&
+                cached.FileLength == curLen &&
+                cached.LastWriteTimeUtc == curWrite)
                 return cached;
 
             ProbeResult result;
@@ -99,6 +114,8 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
             {
                 result = None();
             }
+            result.FileLength = curLen;
+            result.LastWriteTimeUtc = curWrite;
 
             if (Cache.Count > 512)
             {
@@ -284,39 +301,37 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
                 // box payload 理论上可能带尾部填充，截到最后一个 '}' 为止
                 int end = Array.LastIndexOf(payload, (byte)'}');
                 if (end < 0) return null;
-                var json = new byte[end + 1];
-                Array.Copy(payload, json, end + 1);
+                var jsonText = Encoding.UTF8.GetString(payload, 0, end + 1);
 
-                using (var doc = JsonDocument.Parse(json))
+                var ser = new JavaScriptSerializer();
+                var root = ser.Deserialize<Dictionary<string, object>>(jsonText);
+                if (root == null || !root.TryGetValue("info", out var infoObj) || !(infoObj is Dictionary<string, object> info))
+                    return null;
+
+                double videoW = ReadDouble(info, "videoW");
+                double videoH = ReadDouble(info, "videoH");
+                double outW = ReadDouble(info, "w");
+                double outH = ReadDouble(info, "h");
+                if (videoW <= 0 || videoH <= 0 || outW <= 0 || outH <= 0) return null;
+
+                var rgb = ReadRect(info.TryGetValue("rgbFrame", out var rf) ? rf : null, videoW, videoH);
+                var alpha = ReadRect(info.TryGetValue("aFrame", out var af) ? af : null, videoW, videoH);
+                if (rgb == null || alpha == null) return null;
+
+                int fps = info.TryGetValue("fps", out var fpsObj) ? Convert.ToInt32(fpsObj) : 0;
+                bool isVapx = info.TryGetValue("isVapx", out var vapxObj) && Convert.ToInt32(vapxObj) != 0;
+
+                return new VapMetadata
                 {
-                    var info = doc.RootElement.GetProperty("info");
-                    double videoW = info.GetProperty("videoW").GetDouble();
-                    double videoH = info.GetProperty("videoH").GetDouble();
-                    double outW = info.GetProperty("w").GetDouble();
-                    double outH = info.GetProperty("h").GetDouble();
-                    if (videoW <= 0 || videoH <= 0 || outW <= 0 || outH <= 0) return null;
-
-                    var rgb = ReadRect(info.GetProperty("rgbFrame"), videoW, videoH);
-                    var alpha = ReadRect(info.GetProperty("aFrame"), videoW, videoH);
-                    if (rgb == null || alpha == null) return null;
-
-                    int fps = 0;
-                    try { fps = info.GetProperty("fps").GetInt32(); } catch { }
-                    bool isVapx = false;
-                    try { isVapx = info.GetProperty("isVapx").GetInt32() != 0; } catch { }
-
-                    return new VapMetadata
-                    {
-                        VideoW = videoW,
-                        VideoH = videoH,
-                        OutW = outW,
-                        OutH = outH,
-                        RgbRect = rgb,
-                        AlphaRect = alpha,
-                        IsVapx = isVapx,
-                        Fps = fps
-                    };
-                }
+                    VideoW = videoW,
+                    VideoH = videoH,
+                    OutW = outW,
+                    OutH = outH,
+                    RgbRect = rgb,
+                    AlphaRect = alpha,
+                    IsVapx = isVapx,
+                    Fps = fps
+                };
             }
             catch
             {
@@ -324,14 +339,19 @@ namespace QuickLook.Plugin.AlphaVideoViewer.Probing
             }
         }
 
-        /// <summary>[x,y,w,h] 像素坐标 → 归一化；缺项/非正尺寸/越界（容 1px 取整误差）返回 null。</summary>
-        private static double[] ReadRect(JsonElement el, double videoW, double videoH)
+        private static double ReadDouble(Dictionary<string, object> dict, string key)
         {
-            if (el.ValueKind != JsonValueKind.Array || el.GetArrayLength() < 4) return null;
-            double x = el[0].GetDouble();
-            double y = el[1].GetDouble();
-            double w = el[2].GetDouble();
-            double h = el[3].GetDouble();
+            return dict.TryGetValue(key, out var v) && v != null ? Convert.ToDouble(v) : 0;
+        }
+
+        /// <summary>[x,y,w,h] 像素坐标 → 归一化；缺项/非正尺寸/越界（容 1px 取整误差）返回 null。</summary>
+        private static double[] ReadRect(object obj, double videoW, double videoH)
+        {
+            if (!(obj is ArrayList arr) || arr.Count < 4) return null;
+            double x = Convert.ToDouble(arr[0]);
+            double y = Convert.ToDouble(arr[1]);
+            double w = Convert.ToDouble(arr[2]);
+            double h = Convert.ToDouble(arr[3]);
             if (w <= 0 || h <= 0) return null;
             const double tol = 1.0;
             if (x < -tol || y < -tol || x + w > videoW + tol || y + h > videoH + tol) return null;
